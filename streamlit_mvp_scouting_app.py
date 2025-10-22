@@ -36,6 +36,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import dask.dataframe as dd
+import gcsfs
 
 # === Helpers propios ===
 from analytics_helpers import (
@@ -133,7 +135,7 @@ def _read_gcs(path: str) -> pd.DataFrame:
     else:
         raise ValueError(f"Extensión no soportada en {path}. Usa .parquet o .csv")
 
-import gcsfs
+
 
 st.markdown("### 🔎 Diagnóstico GCS")
 try:
@@ -185,26 +187,54 @@ def load_events_multi(paths: List[str]) -> pd.DataFrame:
     return ev
 
 
-import dask.dataframe as dd
 
-@st.cache_data(show_spinner="Leyendo en streaming con Dask…", ttl=3600)
-def load_events_multi_dask(paths: list[str], sa_info: dict) -> pd.DataFrame:
+
+@st.cache_data(show_spinner="Leyendo en streaming desde GCS…", ttl=3600)
+def load_events_multi_dask(paths: list[str],
+                           sa_info: dict,
+                           keep_only: list[str] | None = None) -> pd.DataFrame:
     """
-    Carga grandes archivos Parquet desde GCS usando Dask en modo lazy.
-    Solo trae a memoria las columnas necesarias y combina al final.
+    Lee varios Parquet/CSV desde GCS con Dask.
+    - Por defecto NO filtra columnas (mantiene todo el esquema).
+    - Si keep_only no es None, selecciona esa lista de columnas (si existen).
+    Retorna un pandas.DataFrame (materializado) cacheado.
     """
-    dfs = []
+    ddfs = []
     for p in paths:
+        if not p:
+            continue
         try:
-            # Dask soporta GCS directamente via gcsfs
-            ddf = dd.read_parquet(p, storage_options={"token": sa_info})
-            dfs.append(ddf)
+            if p.lower().endswith(".parquet"):
+                ddf = dd.read_parquet(p, storage_options={"token": sa_info})
+            elif p.lower().endswith(".csv"):
+                ddf = dd.read_csv(p, storage_options={"token": sa_info})
+            else:
+                raise ValueError(f"Extensión no soportada en {p}")
+            ddfs.append(ddf)
         except Exception as e:
-            st.warning(f"No se pudo cargar {p}: {e}")
+            st.error(f"❌ No se pudo cargar {p}\n\n**Error:** {e}")
 
-    if not dfs:
+    if not ddfs:
         return pd.DataFrame()
 
+    ddf_all = dd.concat(ddfs, interleave_partitions=True)
+
+    # Si quieres modo “ligero”, especifica keep_only con las columnas que requieres
+    if keep_only:
+        # conserva solo las que existan (evita KeyError)
+        cols = [c for c in keep_only if c in ddf_all.columns]
+        if cols:
+            ddf_all = ddf_all[cols]
+
+    # Materializa a pandas (Dask hace streaming por partición)
+    df = ddf_all.compute()
+
+    # Normaliza 'torneo' y filtra Apertura/Clausura (opcional)
+    if "torneo" in df.columns:
+        df["torneo"] = df["torneo"].astype(str).str.strip().str.title()
+        df = df[df["torneo"].isin(["Apertura", "Clausura"])]
+
+    return df
     # Concatena en modo Dask (sin materializar)
     ddf_all = dd.concat(dfs, axis=0, interleave_partitions=True)
 
