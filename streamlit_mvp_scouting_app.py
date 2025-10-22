@@ -136,31 +136,6 @@ def _read_gcs(path: str) -> pd.DataFrame:
         raise ValueError(f"Extensión no soportada en {path}. Usa .parquet o .csv")
 
 
-'''
-st.markdown("### 🔎 Diagnóstico GCS")
-try:
-    sa_info = dict(st.secrets["gcp_service_account"])  # TOML → dict
-    fs = gcsfs.GCSFileSystem(token=sa_info)
-
-    # Ajusta con tu bucket y prefijo exacto
-    bucket = "statsbomb_itam"
-    prefix = "eventos"  # sin / inicial ni final
-
-    st.write("¿Puedo listar el bucket?:", fs.exists(f"gs://{bucket}/"))
-    st.write("¿Existe la carpeta 'eventos'?:", fs.exists(f"gs://{bucket}/{prefix}/"))
-
-    if fs.exists(f"gs://{bucket}/{prefix}/"):
-        items = fs.ls(f"gs://{bucket}/{prefix}")
-        st.write("Primeros objetos en gs://statsbomb_itam/eventos:", items[:10])
-
-    # Prueba de existencia del archivo exacto
-    test_path = "gs://statsbomb_itam/eventos/events_merged_LigaMX_2023_2024.parquet"
-    st.write("¿Existe el archivo 2023_2024?:", fs.exists(test_path))
-
-except Exception as e:
-    st.error("Fallo autenticación o acceso a GCS")
-    st.exception(e)
-'''
 
 @st.cache_data(show_spinner="Cargando eventos desde GCS…",ttl=3600)
 def load_events_multi(paths: List[str]) -> pd.DataFrame:
