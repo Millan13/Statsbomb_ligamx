@@ -254,7 +254,27 @@ if use_24_25:
     paths.append(path_24_25)
 
 #ev_all = load_events_multi(paths)
-ev_all = load_events_multi_dask(paths, sa_info)
+#ev_all = load_events_multi_dask(paths, sa_info)
+# --- Si alguna vez necesitas modo ligero (opcional), puedes usar:
+needed_cols = [
+#   # IDs y tiempo
+"id","match_id","period","minute","second","timestamp",
+#   # equipos/jugadores
+ "team","team_name","team.name","possession_team_name","player","player_name","player.name","pass_recipient",
+#   # marcador y metadata de partidos
+"home_team","away_team","home_score","away_score",
+#   # tipo de evento y derivados
+"type","type.name","shot_outcome","play_pattern","shot_type","shot_body_part","body_part",
+#   # xG y ubicaciones
+"shot_statsbomb_xg","shot_xg","xg","location","shot_end_location",
+#   # portero
+"goalkeeper_type","goalkeeper_outcome",
+#   # linking de asistencias
+"pass_goal_assist","shot_key_pass_id",
+#   # torneo
+"torneo"
+]
+ev_all = load_events_multi_dask(paths, sa_info, keep_only=needed_cols)
 if ev_all.empty:
     st.error("No se cargaron eventos. Revisa prefijo de GCS, nombres de archivo o permisos IAM.")
     st.stop()
