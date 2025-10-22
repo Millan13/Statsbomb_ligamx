@@ -28,7 +28,7 @@ python-dateutil>=2.9
 
 from __future__ import annotations
 import os
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -67,6 +67,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ---------- Auth GCS (lee el JSON desde Secrets) ----------
+sa_info = json.loads(st.secrets["GCP_SERVICE_ACCOUNT"])
+
+def join_gs(prefix: str, *parts: str) -> str:
+    """Une rutas para gs:// de forma segura sin romper el esquema."""
+    return "/".join([prefix.rstrip("/"), *[p.strip("/") for p in parts]])
+
+def first_col(df: pd.DataFrame, candidates: List[str], default: Optional[str] = None) -> Optional[str]:
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return default
+
 # --- LOGOS EN LA CABECERA (locales) ---
 # Ruta del archivo actual
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -88,9 +101,8 @@ with col_logo_right:
         st.image(logo_isac, width=100)
 
 # -------------------------------
-# Funciones UI rápidas
+# UI helper (igual que tenías)
 # -------------------------------
-
 def donut_kpi(label: str, value: float, total: float, color: str = "#00529F") -> go.Figure:
     remaining = max(total - value, 0)
     fig = go.Figure(go.Pie(
@@ -108,42 +120,62 @@ def donut_kpi(label: str, value: float, total: float, color: str = "#00529F") ->
                        showarrow=False, font=dict(size=18))
     return fig
 
-@st.cache_data(show_spinner=False)
+# -------------------------------
+# Lectura desde GCS (cacheada)
+# -------------------------------
+def _read_gcs(path: str) -> pd.DataFrame:
+    if path.lower().endswith(".parquet"):
+        return pd.read_parquet(path, storage_options={"token": sa_info})
+    elif path.lower().endswith(".csv"):
+        return pd.read_csv(path, storage_options={"token": sa_info})
+    else:
+        raise ValueError(f"Extensión no soportada en {path}. Usa .parquet o .csv")
+
+@st.cache_data(show_spinner="Cargando eventos desde GCS…")
 def load_events_multi(paths: List[str]) -> pd.DataFrame:
-    """Carga y concatena múltiples archivos (Parquet/CSV)."""
+    """Carga (desde GCS) y concatena múltiples archivos Parquet/CSV en uno solo.
+    Cachea por sesión a menos que cambien 'paths'."""
     dfs = []
     for p in paths:
-        if p and os.path.exists(p):
-            try:
-                dfs.append(load_events(p))
-            except Exception as e:
-                st.warning(f"No se pudo cargar {p}: {e}")
+        if not p:
+            continue
+        try:
+            df = _read_gcs(p)
+            dfs.append(df)
+        except Exception as e:
+            st.warning(f"No se pudo cargar {p}: {e}")
     if not dfs:
         return pd.DataFrame()
-    df = pd.concat(dfs, ignore_index=True)
-    return df
+    ev = pd.concat(dfs, ignore_index=True)
+
+    # Normaliza y filtra torneos a Apertura/Clausura
+    if "torneo" in ev.columns:
+        ev["torneo"] = ev["torneo"].astype(str).str.strip().str.title()
+        ev = ev[ev["torneo"].isin(["Apertura", "Clausura"])]
+
+    return ev
 
 # -------------------------------
 # Sidebar – configuración de datos
 # -------------------------------
 with st.sidebar:
-    st.markdown("### ⚙️ Datos")
-    base_dir = st.text_input(
-        "Carpeta base de datos",
-        "/Users/miguelmillandorado/Documents/Personal/Hackaton/Data",
-        help="Directorio que contiene la carpeta 'eventos'",
+    st.markdown("### ⚙️ Datos (GCS)")
+    gcs_prefix = st.text_input(
+        "Ruta base en GCS",
+        value="gs://statsbomb_itam/eventos/",
+        help="Prefijo donde están tus archivos .parquet/.csv (termina en /).",
     )
-    path_23_24 = os.path.join(base_dir, "eventos", "events_merged_LigaMX_2023_2024.parquet")
-    path_24_25 = os.path.join(base_dir, "eventos", "events_merged_LigaMX_2024_2025.parquet")
 
-    use_23_24 = st.checkbox("Usar 2023_2024", value=True)
-    use_24_25 = st.checkbox("Usar 2024_2025", value=True)
+    path_23_24 = join_gs(gcs_prefix, "events_merged_LigaMX_2023_2024.parquet")
+    path_24_25 = join_gs(gcs_prefix, "events_merged_LigaMX_2024_2025.parquet")
+
+    use_23_24 = st.checkbox("Usar 2023–2024", value=True)
+    use_24_25 = st.checkbox("Usar 2024–2025", value=True)
 
     team_name = st.text_input("Equipo", value="América")
+    st.caption("Cargamos 1 sola vez (cache). Luego todo son filtros en memoria.")
 
-    st.caption("Selecciona qué temporadas cargar y luego elige torneo(s) en el control inferior.")
-
-# Cargar eventos
+# Cargar eventos (solo una lectura; se revalida si cambian 'paths')
 paths = []
 if use_23_24:
     paths.append(path_23_24)
@@ -152,38 +184,39 @@ if use_24_25:
 
 ev_all = load_events_multi(paths)
 if ev_all.empty:
-    st.error("No se cargaron eventos. Verifica las rutas en el sidebar.")
+    st.error("No se cargaron eventos. Revisa prefijo de GCS, nombres de archivo o permisos IAM.")
     st.stop()
 
-# Selector de torneos disponibles
-if "torneo" in ev_all.columns:
-    torneos_disp = sorted([t for t in ev_all["torneo"].dropna().astype(str).unique()])
-else:
-    torneos_disp = []
-
+# -------------------------------
+# Selector de torneos (solo Apertura/Clausura)
+# -------------------------------
 with st.sidebar:
     st.markdown("### 🏆 Torneos a analizar")
-    if torneos_disp:
-        default = torneos_disp[-4:] if len(torneos_disp) >= 4 else torneos_disp
-        selected_torneos = st.multiselect("Elige uno o varios (p. ej., últimos 4)", torneos_disp, default=default)
-    else:
-        selected_torneos = []
+    torneos_disp = sorted(ev_all["torneo"].dropna().unique().tolist()) if "torneo" in ev_all else []
+    # Por defecto selecciona lo disponible (Apertura/Clausura)
+    selected_torneos = st.multiselect("Elige torneo(s)", torneos_disp, default=torneos_disp)
     st.divider()
     st.caption("ISAC Hackatón – Player Recommendation | KPIs + Estilo + Heatmap")
 
-# Filtrar por torneos y equipo
-if selected_torneos:
-    df_sel = ev_all[ev_all["torneo"].astype(str).isin(selected_torneos)].copy()
-else:
-    # si no eliges, tomamos el último por defecto
-    df_sel, last_label = filter_last_tournament(ev_all, "torneo")
-    selected_torneos = [last_label]
+# -------------------------------
+# Filtros en memoria (sin re-lectura)
+# -------------------------------
+df_sel = ev_all.copy()
+if selected_torneos and "torneo" in df_sel:
+    df_sel = df_sel[df_sel["torneo"].isin(selected_torneos)]
 
-df_team = df_sel.copy()
-if "team" in df_team.columns or "team_name" in df_team.columns or "possession_team_name" in df_team.columns:
-    df_team = filter_team_tournament(df_sel, torneo=df_sel["torneo"].iloc[0], team_name=team_name) if len(selected_torneos)==1 else df_sel[df_sel.get("team", df_sel.get("team_name", df_sel.get("possession_team_name", ""))).eq(team_name)]
+# Filtro de equipo: detecta columna disponible
+team_col = first_col(df_sel, ["team", "team_name", "team.name", "possession_team_name"])
+if team_col and team_name:
+    df_team = df_sel[df_sel[team_col].astype(str).str.contains(team_name, case=False, na=False)].copy()
 else:
-    st.warning("No se encontró columna de equipo en eventos; se mantendrán todos los eventos.")
+    df_team = df_sel.copy()
+    if not team_col:
+        st.warning("No se encontró columna de equipo ('team', 'team_name', 'team.name', 'possession_team_name').")
+
+# --- Ya puedes usar df_team para el resto de la app ---
+st.success(f"Eventos cargados: {len(df_team):,}  |  Torneos: {', '.join(selected_torneos) if selected_torneos else '—'}")
+st.dataframe(df_team.head())
 
 # -------------------------------
 # Pestañas
