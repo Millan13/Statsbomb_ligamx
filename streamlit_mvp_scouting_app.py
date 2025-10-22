@@ -184,6 +184,43 @@ def load_events_multi(paths: List[str]) -> pd.DataFrame:
 
     return ev
 
+
+import dask.dataframe as dd
+
+@st.cache_data(show_spinner="Leyendo en streaming con Dask…", ttl=3600)
+def load_events_multi_dask(paths: list[str], sa_info: dict) -> pd.DataFrame:
+    """
+    Carga grandes archivos Parquet desde GCS usando Dask en modo lazy.
+    Solo trae a memoria las columnas necesarias y combina al final.
+    """
+    dfs = []
+    for p in paths:
+        try:
+            # Dask soporta GCS directamente via gcsfs
+            ddf = dd.read_parquet(p, storage_options={"token": sa_info})
+            dfs.append(ddf)
+        except Exception as e:
+            st.warning(f"No se pudo cargar {p}: {e}")
+
+    if not dfs:
+        return pd.DataFrame()
+
+    # Concatena en modo Dask (sin materializar)
+    ddf_all = dd.concat(dfs, axis=0, interleave_partitions=True)
+
+    # Opcional: selecciona solo columnas útiles (reduce memoria)
+    keep_cols = [c for c in ddf_all.columns if c in ["id", "period", "minute", "team", "player", "torneo"]]
+    if keep_cols:
+        ddf_all = ddf_all[keep_cols]
+
+    # Convierte a pandas en el momento final (streaming)
+    df = ddf_all.compute()
+
+    if "torneo" in df.columns:
+        df["torneo"] = df["torneo"].astype(str).str.strip().str.title()
+        df = df[df["torneo"].isin(["Apertura", "Clausura"])]
+
+    return df
 # -------------------------------
 # Sidebar – configuración de datos
 # -------------------------------
@@ -211,7 +248,8 @@ if use_23_24:
 if use_24_25:
     paths.append(path_24_25)
 
-ev_all = load_events_multi(paths)
+#ev_all = load_events_multi(paths)
+ev_all = load_events_multi_dask(paths, sa_info)
 if ev_all.empty:
     st.error("No se cargaron eventos. Revisa prefijo de GCS, nombres de archivo o permisos IAM.")
     st.stop()
