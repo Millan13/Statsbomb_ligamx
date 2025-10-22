@@ -4,7 +4,7 @@ pandas==2.2.3
 numpy==2.1.2
 scikit-learn==1.5.2
 networkx==3.4.2
-statsbombpy==1.13.2
+statsbombpy==1.16.0
 requests==2.32.3
 pyarrow==17.0.0    # si lees parquet
 python-dotenv==1.0.1
