@@ -136,7 +136,7 @@ def _read_gcs(path: str) -> pd.DataFrame:
         raise ValueError(f"Extensión no soportada en {path}. Usa .parquet o .csv")
 
 
-
+'''
 st.markdown("### 🔎 Diagnóstico GCS")
 try:
     sa_info = dict(st.secrets["gcp_service_account"])  # TOML → dict
@@ -160,7 +160,7 @@ try:
 except Exception as e:
     st.error("Fallo autenticación o acceso a GCS")
     st.exception(e)
-
+'''
 
 @st.cache_data(show_spinner="Cargando eventos desde GCS…",ttl=3600)
 def load_events_multi(paths: List[str]) -> pd.DataFrame:
