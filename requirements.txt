@@ -6,5 +6,5 @@ scikit-learn==1.5.2
 networkx==3.4.2
 statsbombpy==1.16.0
 requests==2.32.3
-pyarrow==17.0.0    # si lees parquet
+pyarrow==17.0.0
 python-dotenv==1.0.1
