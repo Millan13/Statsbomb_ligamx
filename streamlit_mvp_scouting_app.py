@@ -69,7 +69,8 @@ st.set_page_config(
 )
 
 # ---------- Auth GCS (lee el JSON desde Secrets) ----------
-sa_info = json.loads(st.secrets["GCP_SERVICE_ACCOUNT"])
+#  Correcto con formato TOML
+sa_info = dict(st.secrets["gcp_service_account"])
 
 def join_gs(prefix: str, *parts: str) -> str:
     """Une rutas para gs:// de forma segura sin romper el esquema."""
