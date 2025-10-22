@@ -160,7 +160,7 @@ except Exception as e:
     st.exception(e)
 
 
-@st.cache_data(show_spinner="Cargando eventos desde GCS…")
+@st.cache_data(show_spinner="Cargando eventos desde GCS…",ttl=3600)
 def load_events_multi(paths: List[str]) -> pd.DataFrame:
     """Carga (desde GCS) y concatena múltiples archivos Parquet/CSV en uno solo.
     Cachea por sesión a menos que cambien 'paths'."""
