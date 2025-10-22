@@ -68,9 +68,13 @@ st.set_page_config(
 )
 
 # --- LOGOS EN LA CABECERA (locales) ---
-image_path_default = "/Users/miguelmillandorado/Documents/Personal/Hackaton/images"
-logo_ame = os.path.join(image_path_default, "logo_ame.png")
-logo_isac = os.path.join(image_path_default, "logo_isac.png")
+# Ruta del archivo actual
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+IMAGE_PATH = os.path.join(BASE_DIR, "images")
+
+# Carga de imágenes
+logo_ame = os.path.join(IMAGE_PATH, "logo_ame.png")
+logo_isac = os.path.join(IMAGE_PATH, "logo_isac.png")
 
 col_logo_left, col_title, col_logo_right = st.columns([0.15, 0.7, 0.15])
 with col_logo_left:
