@@ -22,9 +22,9 @@ Para cada jugador, se calculan una serie de **features por 90 minutos** (`per90`
 
 Cada métrica se normaliza en unidades *por 90 minutos* para garantizar comparabilidad entre jugadores con diferentes cargas de juego:
 
-\[
+$$
 \text{valor\_per90} = \frac{\text{conteo}}{\text{minutos}} \times 90
-\]
+$$
 
 ---
 
@@ -69,11 +69,11 @@ Por ello, la fórmula de eficiencia utiliza **ponderaciones distintas** para cad
 
 ### 🧮 3. Fórmula general
 
-\[
+$$
 \text{Eficiencia}_i = \sum_j \text{peso}_j \cdot \text{métrica}_{ij}^{(per90)} - \lambda \cdot \text{turnovers}_{i}^{(per90)}
-\]
+$$
 
-donde:
+donde:  
 - \( i \) = jugador  
 - \( j \) = acción relevante según la posición  
 - \( \lambda \) = penalización proporcional al tipo de acción negativa
