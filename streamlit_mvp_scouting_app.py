@@ -313,6 +313,10 @@ needed_cols = [
     # torneo
     "torneo"
 ]
+# ============================================================
+# CONFIGURACIÓN DE CREDENCIALES
+# ============================================================
+SA_INFO = None  # Usa autenticación por defecto (entorno)
 
 ev_all = load_events_multi_dask(
     paths=paths,
