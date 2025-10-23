@@ -1,6 +1,7 @@
 name: statsbomb_env
 channels:
   - https://repo.anaconda.com/pkgs/snowflake
+  - nodefaults
   - snowflake
 dependencies:
   - python=3.10
@@ -13,4 +14,4 @@ dependencies:
   - pyarrow=16
   - requests
   - python-dotenv
-
+  - pip
