@@ -25,7 +25,6 @@ Cada métrica se normaliza en unidades *por 90 minutos* para garantizar comparab
 $$
 \text{valor\_per90} = \frac{\text{conteo}}{\text{minutos}} \times 90
 $$
-
 ---
 
 ### ⚙️ 2. Pesos diferenciales por grupo posicional
