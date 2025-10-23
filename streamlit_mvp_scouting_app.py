@@ -235,9 +235,6 @@ def load_events_multi_dask(
     return df
 
 
-import json
-import pandas as pd
-import streamlit as st
 
 # ================================
 # Utilidad para unir rutas GCS
@@ -256,7 +253,8 @@ def load_single_parquet_gcs(path: str) -> pd.DataFrame:
     No concatena nada. Retorna un pandas.DataFrame.
     """
     try:
-        sa_info = json.loads(st.secrets["gcp_service_account"])  # <- credenciales desde secrets
+        #sa_info = json.loads(st.secrets["gcp_service_account"])  # <- credenciales desde secrets
+        sa_info = dict(st.secrets["gcp_service_account"])
     except Exception:
         st.error("No encontré `st.secrets['gcp_service_account']`. Agrega tu JSON de Service Account a los secrets.")
         return pd.DataFrame()
