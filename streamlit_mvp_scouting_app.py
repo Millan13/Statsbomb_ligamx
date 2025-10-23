@@ -38,6 +38,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import dask.dataframe as dd
 import gcsfs
+from pathlib import PurePosixPath
 
 # === Helpers propios ===
 from analytics_helpers import (
@@ -163,12 +164,6 @@ def load_events_multi(paths: List[str]) -> pd.DataFrame:
 
 
 
-
-import dask.dataframe as dd
-import pandas as pd
-import streamlit as st
-from pathlib import PurePosixPath
-
 # ============================================================
 # FUNCIÓN PRINCIPAL DE CARGA (DASK)
 # ============================================================
@@ -240,61 +235,66 @@ def load_events_multi_dask(
     return df
 
 
-# ============================================================
-# SIDEBAR – CONFIGURACIÓN DE DATOS
-# ============================================================
+import json
+import pandas as pd
+import streamlit as st
+
+# ================================
+# Utilidad para unir rutas GCS
+# ================================
 def join_gs(prefix: str, name: str) -> str:
-    """Une rutas tipo GCS sin duplicar '/'."""
     return prefix.rstrip("/") + "/" + name.lstrip("/")
 
+# ================================
+# Carga directa de UN parquet GCS
+# ================================
+@st.cache_data(show_spinner="Leyendo parquet único desde GCS…", ttl=3600)
+def load_single_parquet_gcs(path: str) -> pd.DataFrame:
+    """
+    Lee ÚNICAMENTE el parquet indicado en `path` (gs://... .parquet)
+    usando credenciales del Service Account guardadas en st.secrets["gcp_service_account"].
+    No concatena nada. Retorna un pandas.DataFrame.
+    """
+    try:
+        sa_info = json.loads(st.secrets["gcp_service_account"])  # <- credenciales desde secrets
+    except Exception:
+        st.error("No encontré `st.secrets['gcp_service_account']`. Agrega tu JSON de Service Account a los secrets.")
+        return pd.DataFrame()
 
+    storage_opts = {"token": sa_info}  # fuerza gcsfs a usar este SA (evita metadata server)
+    try:
+        df = pd.read_parquet(path, storage_options=storage_opts, engine="pyarrow")
+    except Exception as e:
+        st.error(f"❌ Error leyendo {path}\n\n**Detalle:** {e}")
+        return pd.DataFrame()
+
+    # Normaliza/filtra 'torneo' si existe
+    if "torneo" in df.columns:
+        df["torneo"] = df["torneo"].astype(str).str.strip().str.title()
+        df = df[df["torneo"].isin(["Apertura", "Clausura"])]
+
+    return df
+
+# ================================
+# Sidebar – SOLO un archivo
+# ================================
 with st.sidebar:
     st.markdown("### ⚙️ Datos (GCS)")
     gcs_prefix = st.text_input(
         "Ruta base en GCS",
         value="gs://statsbomb_itam/eventos/",
-        help="Prefijo donde están tus archivos .parquet/.csv (termina en /).",
+        help="Prefijo donde está tu parquet único (termina en /).",
     )
-
-    path_23_24 = join_gs(gcs_prefix, "events_merged_LigaMX_2023_2024.parquet")
-    path_24_25 = join_gs(gcs_prefix, "events_merged_LigaMX_2024_2025.parquet")
-    path_24_25_clausura_app = join_gs(
-        gcs_prefix, "events_merged_LigaMX_2024_2025_clausura_streamlit_app.parquet"
-    )
-
-    use_23_24 = st.checkbox("Usar 2023–2024", value=True)
-    use_24_25 = st.checkbox("Usar 2024–2025", value=True)
-
-    # 💡 NUEVO: modo ultraligero activado por defecto
-    use_ultralight_clausura = st.toggle(
-        "⚡ Modo ultraligero: usar SOLO Clausura 2024–2025 (archivo optimizado para Streamlit)",
-        value=True,
-        help=(
-            "Carga únicamente 'events_merged_LigaMX_2024_2025_clausura_streamlit_app.parquet'. "
-            "Evita concatenar y reduce uso de memoria."
-        ),
-    )
+    # Archivo ÚNICO optimizado para la app
+    clausura_parquet = "events_merged_LigaMX_2024_2025_clausura_streamlit_app.parquet"
+    path_clausura = join_gs(gcs_prefix, clausura_parquet)
 
     team_name = st.text_input("Equipo", value="América")
-    st.caption("Cargamos 1 sola vez (cache). Luego todo son filtros en memoria.")
+    st.caption("Leemos 1 sola vez (cache). Todo lo demás son filtros en memoria.")
 
-
-# ============================================================
-# DEFINICIÓN DE PATHS A CARGAR
-# ============================================================
-if use_ultralight_clausura:
-    paths = [path_24_25_clausura_app]
-else:
-    paths = []
-    if use_23_24:
-        paths.append(path_23_24)
-    if use_24_25:
-        paths.append(path_24_25)
-
-
-# ============================================================
-# CARGA DE DATOS
-# ============================================================
+# ================================
+# Lectura ÚNICA
+# ================================
 needed_cols = [
     # IDs y tiempo
     "id","match_id","period","minute","second","timestamp",
@@ -313,25 +313,20 @@ needed_cols = [
     # torneo
     "torneo"
 ]
-# ============================================================
-# CONFIGURACIÓN DE CREDENCIALES
-# ============================================================
-SA_INFO = None  # Usa autenticación por defecto (entorno)
 
-ev_all = load_events_multi_dask(
-    paths=paths,
-    sa_info=SA_INFO,
-    keep_only=needed_cols,
-)
-
+ev_all = load_single_parquet_gcs(path_clausura)
 if ev_all.empty:
-    st.error("No se cargaron eventos. Revisa prefijo de GCS, nombres de archivo o permisos IAM.")
+    st.error("No se cargaron eventos. Revisa el prefijo GCS, el nombre del archivo o tus secrets.")
     st.stop()
 
+# Subselección de columnas si existen (modo ligero)
+keep = [c for c in needed_cols if c in ev_all.columns]
+if keep:
+    ev_all = ev_all[keep].copy()
 
-# ============================================================
-# SELECTOR DE TORNEOS
-# ============================================================
+# ================================
+# Selector de torneos (opcional)
+# ================================
 with st.sidebar:
     st.markdown("### 🏆 Torneos a analizar")
     torneos_disp = sorted(ev_all["torneo"].dropna().unique().tolist()) if "torneo" in ev_all else []
@@ -339,15 +334,13 @@ with st.sidebar:
     st.divider()
     st.caption("ISAC Hackatón – Player Recommendation | KPIs + Estilo + Heatmap")
 
-
-# ============================================================
-# FILTROS EN MEMORIA
-# ============================================================
-df_sel = ev_all.copy()
-if selected_torneos and "torneo" in df_sel:
+# ================================
+# Filtros en memoria
+# ================================
+df_sel = ev_all
+if selected_torneos and "torneo" in df_sel.columns:
     df_sel = df_sel[df_sel["torneo"].isin(selected_torneos)]
 
-# Filtro de equipo
 def first_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
     for c in candidates:
         if c in df.columns:
@@ -362,9 +355,9 @@ else:
     if not team_col:
         st.warning("No se encontró columna de equipo ('team', 'team_name', 'team.name', 'possession_team_name').")
 
-# ============================================================
-# RESUMEN FINAL
-# ============================================================
+# ================================
+# Resumen / vista rápida
+# ================================
 st.success(f"Eventos cargados: {len(df_team):,}  |  Torneos: {', '.join(selected_torneos) if selected_torneos else '—'}")
 st.dataframe(df_team.head())
 
