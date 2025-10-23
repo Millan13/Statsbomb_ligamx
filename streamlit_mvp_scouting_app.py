@@ -164,20 +164,46 @@ def load_events_multi(paths: List[str]) -> pd.DataFrame:
 
 
 
+import dask.dataframe as dd
+import pandas as pd
+import streamlit as st
+from pathlib import PurePosixPath
+
+# ============================================================
+# FUNCIÓN PRINCIPAL DE CARGA (DASK)
+# ============================================================
 @st.cache_data(show_spinner="Leyendo en streaming desde GCS…", ttl=3600)
-def load_events_multi_dask(paths: list[str],
-                           sa_info: dict,
-                           keep_only: list[str] | None = None) -> pd.DataFrame:
+def load_events_multi_dask(
+    paths: list[str],
+    sa_info: dict,
+    keep_only: list[str] | None = None,
+    filename_filter: str | None = None,   # opcional: filtra por nombre o patrón
+    case_insensitive: bool = True
+) -> pd.DataFrame:
     """
     Lee varios Parquet/CSV desde GCS con Dask.
-    - Por defecto NO filtra columnas (mantiene todo el esquema).
-    - Si keep_only no es None, selecciona esa lista de columnas (si existen).
-    Retorna un pandas.DataFrame (materializado) cacheado.
+    - Si filename_filter no es None, sólo procesa archivos cuyo nombre coincida (fnmatch, soporta '*').
+    - Si keep_only no es None, selecciona esas columnas (si existen).
+    Devuelve un pandas.DataFrame materializado y cacheado.
     """
+    import fnmatch
+
+    def _match(fname: str, patt: str, ci: bool) -> bool:
+        if ci:
+            return fnmatch.fnmatch(fname.lower(), patt.lower())
+        return fnmatch.fnmatch(fname, patt)
+
     ddfs = []
-    for p in paths:
+    for p in paths or []:
         if not p:
             continue
+
+        # Filtro opcional por nombre
+        if filename_filter:
+            fname = PurePosixPath(p).name
+            if not _match(fname, filename_filter, case_insensitive):
+                continue
+
         try:
             if p.lower().endswith(".parquet"):
                 ddf = dd.read_parquet(p, storage_options={"token": sa_info})
@@ -190,45 +216,38 @@ def load_events_multi_dask(paths: list[str],
             st.error(f"❌ No se pudo cargar {p}\n\n**Error:** {e}")
 
     if not ddfs:
+        if filename_filter:
+            st.warning(f"No se encontró ningún archivo que coincida con '{filename_filter}'.")
         return pd.DataFrame()
 
+    # Concatena particiones (streaming)
     ddf_all = dd.concat(ddfs, interleave_partitions=True)
 
-    # Si quieres modo “ligero”, especifica keep_only con las columnas que requieres
+    # Selección de columnas (modo ligero)
     if keep_only:
-        # conserva solo las que existan (evita KeyError)
         cols = [c for c in keep_only if c in ddf_all.columns]
         if cols:
             ddf_all = ddf_all[cols]
 
-    # Materializa a pandas (Dask hace streaming por partición)
+    # Materializa
     df = ddf_all.compute()
 
-    # Normaliza 'torneo' y filtra Apertura/Clausura (opcional)
+    # Normaliza 'torneo'
     if "torneo" in df.columns:
         df["torneo"] = df["torneo"].astype(str).str.strip().str.title()
         df = df[df["torneo"].isin(["Apertura", "Clausura"])]
 
     return df
-    # Concatena en modo Dask (sin materializar)
-    ddf_all = dd.concat(dfs, axis=0, interleave_partitions=True)
 
-    # Opcional: selecciona solo columnas útiles (reduce memoria)
-    keep_cols = [c for c in ddf_all.columns if c in ["id", "period", "minute", "team", "player", "torneo"]]
-    if keep_cols:
-        ddf_all = ddf_all[keep_cols]
 
-    # Convierte a pandas en el momento final (streaming)
-    df = ddf_all.compute()
+# ============================================================
+# SIDEBAR – CONFIGURACIÓN DE DATOS
+# ============================================================
+def join_gs(prefix: str, name: str) -> str:
+    """Une rutas tipo GCS sin duplicar '/'."""
+    return prefix.rstrip("/") + "/" + name.lstrip("/")
 
-    if "torneo" in df.columns:
-        df["torneo"] = df["torneo"].astype(str).str.strip().str.title()
-        df = df[df["torneo"].isin(["Apertura", "Clausura"])]
 
-    return df
-# -------------------------------
-# Sidebar – configuración de datos
-# -------------------------------
 with st.sidebar:
     st.markdown("### ⚙️ Datos (GCS)")
     gcs_prefix = st.text_input(
@@ -239,65 +258,98 @@ with st.sidebar:
 
     path_23_24 = join_gs(gcs_prefix, "events_merged_LigaMX_2023_2024.parquet")
     path_24_25 = join_gs(gcs_prefix, "events_merged_LigaMX_2024_2025.parquet")
+    path_24_25_clausura_app = join_gs(
+        gcs_prefix, "events_merged_LigaMX_2024_2025_clausura_streamlit_app.parquet"
+    )
 
     use_23_24 = st.checkbox("Usar 2023–2024", value=True)
     use_24_25 = st.checkbox("Usar 2024–2025", value=True)
 
+    # 💡 NUEVO: modo ultraligero activado por defecto
+    use_ultralight_clausura = st.toggle(
+        "⚡ Modo ultraligero: usar SOLO Clausura 2024–2025 (archivo optimizado para Streamlit)",
+        value=True,
+        help=(
+            "Carga únicamente 'events_merged_LigaMX_2024_2025_clausura_streamlit_app.parquet'. "
+            "Evita concatenar y reduce uso de memoria."
+        ),
+    )
+
     team_name = st.text_input("Equipo", value="América")
     st.caption("Cargamos 1 sola vez (cache). Luego todo son filtros en memoria.")
 
-# Cargar eventos (solo una lectura; se revalida si cambian 'paths')
-paths = []
-if use_23_24:
-    paths.append(path_23_24)
-if use_24_25:
-    paths.append(path_24_25)
 
-#ev_all = load_events_multi(paths)
-#ev_all = load_events_multi_dask(paths, sa_info)
-# --- Si alguna vez necesitas modo ligero (opcional), puedes usar:
+# ============================================================
+# DEFINICIÓN DE PATHS A CARGAR
+# ============================================================
+if use_ultralight_clausura:
+    paths = [path_24_25_clausura_app]
+else:
+    paths = []
+    if use_23_24:
+        paths.append(path_23_24)
+    if use_24_25:
+        paths.append(path_24_25)
+
+
+# ============================================================
+# CARGA DE DATOS
+# ============================================================
 needed_cols = [
-#   # IDs y tiempo
-"id","match_id","period","minute","second","timestamp",
-#   # equipos/jugadores
- "team","team_name","team.name","possession_team_name","player","player_name","player.name","pass_recipient",
-#   # marcador y metadata de partidos
-"home_team","away_team","home_score","away_score",
-#   # tipo de evento y derivados
-"type","type.name","shot_outcome","play_pattern","shot_type","shot_body_part","body_part",
-#   # xG y ubicaciones
-"shot_statsbomb_xg","shot_xg","xg","location","shot_end_location",
-#   # portero
-"goalkeeper_type","goalkeeper_outcome",
-#   # linking de asistencias
-"pass_goal_assist","shot_key_pass_id",
-#   # torneo
-"torneo"
+    # IDs y tiempo
+    "id","match_id","period","minute","second","timestamp",
+    # equipos/jugadores
+    "team","team_name","team.name","possession_team_name","player","player_name","player.name","pass_recipient",
+    # marcador y metadata
+    "home_team","away_team","home_score","away_score",
+    # tipo de evento y derivados
+    "type","type.name","shot_outcome","play_pattern","shot_type","shot_body_part","body_part",
+    # xG y ubicaciones
+    "shot_statsbomb_xg","shot_xg","xg","location","shot_end_location",
+    # portero
+    "goalkeeper_type","goalkeeper_outcome",
+    # linking de asistencias
+    "pass_goal_assist","shot_key_pass_id",
+    # torneo
+    "torneo"
 ]
-ev_all = load_events_multi_dask(paths, sa_info, keep_only=needed_cols)
+
+ev_all = load_events_multi_dask(
+    paths=paths,
+    sa_info=SA_INFO,
+    keep_only=needed_cols,
+)
+
 if ev_all.empty:
     st.error("No se cargaron eventos. Revisa prefijo de GCS, nombres de archivo o permisos IAM.")
     st.stop()
 
-# -------------------------------
-# Selector de torneos (solo Apertura/Clausura)
-# -------------------------------
+
+# ============================================================
+# SELECTOR DE TORNEOS
+# ============================================================
 with st.sidebar:
     st.markdown("### 🏆 Torneos a analizar")
     torneos_disp = sorted(ev_all["torneo"].dropna().unique().tolist()) if "torneo" in ev_all else []
-    # Por defecto selecciona lo disponible (Apertura/Clausura)
     selected_torneos = st.multiselect("Elige torneo(s)", torneos_disp, default=torneos_disp)
     st.divider()
     st.caption("ISAC Hackatón – Player Recommendation | KPIs + Estilo + Heatmap")
 
-# -------------------------------
-# Filtros en memoria (sin re-lectura)
-# -------------------------------
+
+# ============================================================
+# FILTROS EN MEMORIA
+# ============================================================
 df_sel = ev_all.copy()
 if selected_torneos and "torneo" in df_sel:
     df_sel = df_sel[df_sel["torneo"].isin(selected_torneos)]
 
-# Filtro de equipo: detecta columna disponible
+# Filtro de equipo
+def first_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
 team_col = first_col(df_sel, ["team", "team_name", "team.name", "possession_team_name"])
 if team_col and team_name:
     df_team = df_sel[df_sel[team_col].astype(str).str.contains(team_name, case=False, na=False)].copy()
@@ -306,7 +358,9 @@ else:
     if not team_col:
         st.warning("No se encontró columna de equipo ('team', 'team_name', 'team.name', 'possession_team_name').")
 
-# --- Ya puedes usar df_team para el resto de la app ---
+# ============================================================
+# RESUMEN FINAL
+# ============================================================
 st.success(f"Eventos cargados: {len(df_team):,}  |  Torneos: {', '.join(selected_torneos) if selected_torneos else '—'}")
 st.dataframe(df_team.head())
 
