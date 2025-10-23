@@ -23,12 +23,9 @@ Para cada jugador, se calculan una serie de **features por 90 minutos** (`per90`
 Cada métrica se normaliza en unidades *por 90 minutos* para garantizar comparabilidad entre jugadores con diferentes cargas de juego:
 
 $$
-\text{valor\_per90} = \frac{\text{conteo}}{\text{minutos}} \times 90
+valor_{per90} = \frac{\text{conteo}}{\text{minutos}} \times 90
 $$
 
-$$
-\text{valor\_per90} = \frac{\text{conteo}}{\text{minutos}} \times 90
-$$
 ---
 
 ### ⚙️ 2. Pesos diferenciales por grupo posicional
