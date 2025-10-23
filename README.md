@@ -7,6 +7,11 @@ Repositorio para el hackaton del ISAC ITAM con análisis de rendimiento de club 
 La **Eficiencia Compuesta v1** es un indicador unificado del rendimiento de cada jugador, calculado a partir de los eventos individuales (StatsBomb Events v8).  
 A diferencia de métricas que dependen de modelos de Expected Goals (xG) o de *On-Ball Value (OBV)*, esta métrica se basa en **acciones observables** y **contribuciones directas** dentro del juego, normalizadas por 90 minutos y ponderadas según la **posición del jugador**.
 
+
+La métrica de eficiencia compuesta mide cuánto aporta realmente un jugador a su equipo durante un partido, considerando tanto sus acciones positivas como los errores que comete.
+En lugar de fijarse solo en goles o asistencias, analiza todo lo que pasa cuando el jugador interviene: pases progresivos, recuperaciones, duelos ganados, tiros, pérdidas de balón, entre otros.
+Cada acción tiene un peso diferente según la posición —por ejemplo, los delanteros son valorados más por generar peligro y los defensas por recuperar o bloquear jugadas—.
+Al final, todos esos aportes se combinan en un solo puntaje por 90 minutos, que refleja la influencia real y equilibrada del jugador en el juego, independientemente de si marcó gol o no.
 ---
 
 ### 🔍 1. Enfoque general
