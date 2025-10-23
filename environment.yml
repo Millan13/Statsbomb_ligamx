@@ -1,7 +1,7 @@
 name: statsbomb_env
 channels:
+  - https://repo.anaconda.com/pkgs/snowflake
   - snowflake
-  - conda-forge
 dependencies:
   - python=3.10
   - streamlit=1.38
@@ -13,3 +13,4 @@ dependencies:
   - pyarrow=16
   - requests
   - python-dotenv
+
