@@ -757,6 +757,7 @@ with TAB_AMERICA:
             #title=f"Red de pases (Top-{TOP_N} por PageRank, conexiones ≥ umbral)"
         )
         st.plotly_chart(fig_net, use_container_width=True)
+        del fig; gc.collect()
 
         # (opcional) tabla top-10 por PageRank
         #st.markdown("#### Top-10 por centralidad (PageRank)")
