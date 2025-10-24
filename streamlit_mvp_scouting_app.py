@@ -407,7 +407,7 @@ st.session_state["events_df_filtered_team"] = df_team.copy()
 # -------------------------------
 # Pestañas
 # -------------------------------
-TAB_INICIO, TAB_AMERICA, TAB_ROSTER = st.tabs(["🏁 Inicio", "🦅 Club América", "👥 Roster:Scouting"])
+TAB_INICIO, TAB_AMERICA, TAB_ROSTER = st.tabs(["🏁 Inicio", "🦅 Club América", "👥 Roster-Scouting"])
 
 # -------------------------------
 # Tab: Inicio (explicación + selección)
@@ -431,7 +431,7 @@ with TAB_INICIO:
       
       - **Inicio:** descripción general del proyecto y su objetivo.  
       - **Club América:** análisis detallado del desempeño colectivo, redes de pase, xG y métricas tácticas.  
-      - **Roster:** exploración del rendimiento individual de cada jugador del América y recomendaciones de sustitutos potenciales dentro de la liga.  
+      - **Roster-Scouting:** exploración del rendimiento individual de cada jugador del América y recomendaciones de sustitutos potenciales dentro de la liga.  
       - **Comparativas:** análisis cruzado entre jugadores, posiciones o torneos.  
       - **Scouting:** búsqueda avanzada de talentos según atributos, eficiencia y similitud posicional.
       """)
