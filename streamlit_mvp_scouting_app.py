@@ -1,8 +1,8 @@
 """
 Streamlit MVP – ISAC Hackatón (Player Recommendation)
-Autor: Tú (Miguel Millán) — scaffold regenerado por ChatGPT
+Autor: MMillan 
 
-🔧 Requisitos (requirements.txt)
+Requisitos (requirements.txt)
 streamlit>=1.36
 pandas>=2.2
 numpy>=1.26
@@ -11,13 +11,13 @@ mplsoccer>=1.4.0
 statsbombpy>=1.13
 python-dateutil>=2.9
 
-▶️ Cómo ejecutar
+Cómo ejecutar
 1) Asegura el módulo de utilidades `analytics_helpers.py` (ya está en el proyecto).
 2) Ajusta las rutas de logos e input de datos en el sidebar o en las variables por defecto.
 3) Ejecuta:  
    `streamlit run streamlit_mvp_scouting_app.py`
 
-🧩 Qué hace este MVP (con datos REALES)
+Qué hace este MVP (con datos REALES)
 - Lee **varios Parquet** (p. ej., 2023_2024 y 2024_2025) y concatena.
 - Selector de **torneo(s)** (Apertura/Clausura). Puedes elegir uno o varios (p. ej., *últimos 4 torneos*).
 - KPIs del/los torneos seleccionados: **PJ, G, E, P**, máximos (**goleador, asistidor, GK con más atajadas**).
@@ -39,6 +39,9 @@ import streamlit as st
 import dask.dataframe as dd
 import gcsfs
 from pathlib import PurePosixPath
+import fnmatch
+import math, html as py_html, textwrap, base64, json
+from streamlit.components.v1 import html as st_html
 
 # === Helpers propios ===
 from analytics_helpers import (
@@ -219,7 +222,7 @@ def load_events_multi_dask(
     - Si keep_only no es None, selecciona esas columnas (si existen).
     Devuelve un pandas.DataFrame materializado y cacheado.
     """
-    import fnmatch
+    
 
     def _match(fname: str, patt: str, ci: bool) -> bool:
         if ci:
@@ -412,7 +415,7 @@ TAB_INICIO, TAB_AMERICA, TAB_ROSTER = st.tabs(["🏁 Inicio", "🦅 Club Améric
 with TAB_INICIO:
     st.subheader("¿Qué puedes observar en esta herramienta?")
     st.markdown("""
-      ## 🧠 ISAC Scouting – Club América
+      ##  ISAC Scouting – Club América
       
       Esta herramienta permite explorar el rendimiento del **Club América** y de todos los equipos de la **Liga MX** a partir de datos oficiales de **StatsBomb**.  
       Su objetivo es ofrecer una **radiografía completa del desempeño del equipo** en diferentes torneos y contextos, permitiendo seleccionar **competencias específicas** para analizar tendencias colectivas y rendimientos individuales.
@@ -424,7 +427,7 @@ with TAB_INICIO:
       
       ---
       
-      ### 🔍 Navegación de la herramienta
+      ###  Navegación de la herramienta
       
       - **Inicio:** descripción general del proyecto y su objetivo.  
       - **Club América:** análisis detallado del desempeño colectivo, redes de pase, xG y métricas tácticas.  
@@ -793,12 +796,7 @@ with TAB_AMERICA:
 # Tab: Roster (completa)
 # -------------------------------
 # ============================== TAB: ROSTER (SIN RECARGA) ==============================
-import streamlit as st
-import pandas as pd
-import numpy as np
-import math, html as py_html, textwrap, base64, json
 
-from streamlit.components.v1 import html as st_html
 
 with TAB_ROSTER:
 
