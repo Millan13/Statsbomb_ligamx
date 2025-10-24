@@ -50,9 +50,47 @@ from analytics_helpers import (
     infer_style_summary,
     goals_xy_for_heatmap,
     build_pass_network,
-    plot_pass_network
+    plot_pass_network,
+    display_play_style_section,
+    display_goal_zones_section,
+    #ah_build_players_df_from_events,
+    ah_compute_obv_like,
+    ah_build_players_df_from_events_v2
 
 )
+
+@st.cache_data(show_spinner=True)
+def _build_players_from_filtered_events(
+    events_df: pd.DataFrame,
+    normalize_by_position: bool = True,
+    min_minutes: float = 270.0
+):
+    """
+    Wrapper cacheado que genera métricas OBV por jugador a partir de eventos filtrados.
+    Basado en ah_build_players_df_from_events_v2.
+    """
+    return ah_build_players_df_from_events_v2(
+        events=events_df,
+        roster_positions=None,             # o tu mapeo por posición si lo tienes
+        normalize_by_position=normalize_by_position,
+        add_position_relative_cols=True,
+        min_minutes=min_minutes,
+        use_total_net_direct=False         # o True si prefieres usar obv_total_net per90 directo
+    )
+
+def _get_filtered_events_from_session() -> pd.DataFrame | None:
+    # Lista de claves candidatas típicas para el DF de eventos filtrado
+    candidate_keys = [
+        "events_df_filtered", "events_filtered", "df_events_filtered",
+        "events_df", "df_events"  # fallback si no guardas una versión filtrada separada
+    ]
+    for k in candidate_keys:
+        df = st.session_state.get(k)
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            return df
+    return None
+
+
 
 # Opcional: mplsoccer para dibujar cancha (usamos Plotly como fallback)
 try:
@@ -352,259 +390,316 @@ else:
     df_team = df_sel.copy()
     if not team_col:
         st.warning("No se encontró columna de equipo ('team', 'team_name', 'team.name', 'possession_team_name').")
-
+# Después de construir df_sel (filtrado por torneos)
+st.session_state["events_df_filtered_allteams"] = df_sel.copy()
+# Después de construir df_team (filtrado por torneos + equipo)
+st.session_state["events_df_filtered_team"] = df_team.copy()
 # ================================
 # Resumen / vista rápida
 # ================================
 st.success(f"Eventos cargados: {len(df_team):,}  |  Torneos: {', '.join(selected_torneos) if selected_torneos else '—'}")
 st.dataframe(df_team.head())
 
-# -------------------------------
-# Pestañas
-# -------------------------------
-TAB_INICIO, TAB_AMERICA, TAB_ROSTER = st.tabs(["🏁 Inicio", "🦅 Club América", "👥 Roster"])
 
-# -------------------------------
-# Tab: Inicio (explicación + selección)
-# -------------------------------
-with TAB_INICIO:
-    st.subheader("¿Qué puedes observar en esta herramienta?")
-    st.markdown(
-        """
-        - **Comportamiento del equipo**: KPIs del/los torneos seleccionados.
-        - **Estilo de juego**: resumen heurístico (open play, balón parado, contraataque, media distancia, juego aéreo).
-        - **Zonas de impacto**: Heatmap de **goles** (coordenadas StatsBomb 120×80).
-        - **Roster**: vista por jugador (iteraremos con métricas reales a continuación).
-        """
-    )
+    #         st.plotly_chart(fig, use_container_width=True)
+
 
 # -------------------------------
-# Tab: Club América (análisis real)
+# Tab: Roster (completa)
 # -------------------------------
-with TAB_AMERICA:
-    st.subheader(f"Resumen Torneo: {', '.join(selected_torneos)}")
+# ============================== TAB: ROSTER (SIN RECARGA) ==============================
+import streamlit as st
+import pandas as pd
+import numpy as np
+import math, html as py_html, textwrap, base64, json
 
-    # KPIs y máximos
-    #kpis, matches_agg = compute_kpis_from_matches(df_team, team_name=team_name)
+from streamlit.components.v1 import html as st_html
 
-    # df_sel = eventos de los torneos seleccionados (ambos equipos)
-    kpis, matches_agg = compute_kpis_from_matches(df_sel, team_name=team_name)
-    #team_col = "team" if "team" in df_sel.columns else ("team_name" if "team_name" in df_sel.columns else "possession_team_name")
-    #st.write("Teams in df_sel:", df_sel[team_col].value_counts().to_frame("rows"))
-
-
-    # ========================
-    # ESTILO: cards y tipografías
-    # ========================
-    st.markdown("""
-    <style>
-    .kpi-section {
-    padding: 16px 18px; border-radius: 16px; margin: 10px 0 18px 0;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    }
-    .kpi-title {
-    font-size: 1.1rem; font-weight: 700; letter-spacing: .3px; margin-bottom: 12px;
-    }
-    .kpi-subtle { color: #9aa0a6; font-size: .9rem; }
-    .kpi-num { font-size: 1.8rem; font-weight: 800; line-height: 1; }
-    .kpi-label { font-size: .86rem; color: #c9cdd3; margin-top: 4px; }
-    .kpi-split { display:flex; gap:16px; margin-top: 8px; }
-    .kpi-pill {
-    display:inline-block; padding: 4px 10px; border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.12); font-size:.78rem; color:#cbd5e1;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    def fmt_pct(x):
-        import math
-        if x is None or (isinstance(x, float) and (math.isnan(x) or math.isinf(x))):
-            return "–"
-        return f"{x*100:.1f}%"
-
-    def fmt_num(x):
-        return "–" if x is None else f"{x:,}"
-
-    def safe_div(a, b):
-        return (a / b) if b and b != 0 else None
-
-    # Derivados útiles
-    PJ = kpis.get("PJ", 0)
-    GF = kpis.get("GoalsFor", 0)
-    GA = kpis.get("GoalsAgainst", 0)
-    DG = kpis.get("GoalDiff", 0)
-    shots_for = kpis.get("ShotsFor", None)
-    shots_ag  = kpis.get("ShotsAgainst", None)
-    conv = kpis.get("ConversionRate", None)
-    xg_for = kpis.get("xG_for", None)
-    xg_ag  = kpis.get("xG_against", None)
-    xg_bal = (xg_for - xg_ag) if (xg_for is not None and xg_ag is not None) else None
-    gf_pm  = safe_div(GF, PJ)
-    ga_pm  = safe_div(GA, PJ)
-
-    # ========================
-    # BLOQUE 1 — Rendimiento global
-    # ========================
-    st.markdown("<div class='kpi-section'>", unsafe_allow_html=True)
-    st.markdown("<div class='kpi-title'>📊 Rendimiento global</div>", unsafe_allow_html=True)
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.plotly_chart(donut_kpi("PJ", kpis["PJ"], max(kpis["PJ"],1)), use_container_width=True)
-    with c2: st.plotly_chart(donut_kpi("G", kpis["G"], kpis["PJ"], "#28a745"), use_container_width=True)
-    with c3: st.plotly_chart(donut_kpi("E", kpis["E"], kpis["PJ"], "#ffc107"), use_container_width=True)
-    with c4: st.plotly_chart(donut_kpi("P", kpis["P"], kpis["PJ"], "#dc3545"), use_container_width=True)
-
-    g1, g2, g3, g4 = st.columns(4)
-    with g1:
-        st.markdown(f"<div class='kpi-num'>{kpis['Points']}</div><div class='kpi-label'>Puntos</div>", unsafe_allow_html=True)
-    with g2:
-        st.markdown(f"<div class='kpi-num'>{fmt_pct(kpis['WinRate'])}</div><div class='kpi-label'>Win%</div>", unsafe_allow_html=True)
-    with g3:
-        st.markdown(f"<span class='kpi-pill'>Torneos: {', '.join(selected_torneos)}</span>", unsafe_allow_html=True)
-    with g4:
-        st.empty()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # ========================
-    # BLOQUE 2 — Ataque
-    # ========================
-    st.markdown("<div class='kpi-section'>", unsafe_allow_html=True)
-    st.markdown("<div class='kpi-title'>⚽️ Ataque</div>", unsafe_allow_html=True)
-    a1, a2, a3, a4 = st.columns(4)
-    with a1:
-        st.markdown(f"<div class='kpi-num'>{GF}</div><div class='kpi-label'>Goles a favor</div>", unsafe_allow_html=True)
-    with a2:
-        st.markdown(f"<div class='kpi-num'>{fmt_num(shots_for)}</div><div class='kpi-label'>Tiros For</div>", unsafe_allow_html=True)
-    with a3:
-        st.markdown(f"<div class='kpi-num'>{fmt_pct(conv)}</div><div class='kpi-label'>Conv%</div>", unsafe_allow_html=True)
-    with a4:
-        xg_for_txt = "–" if xg_for is None else f"{xg_for:.2f}"
-        st.markdown(f"<div class='kpi-num'>{xg_for_txt}</div><div class='kpi-label'>xG For</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # ========================
-    # BLOQUE 3 — Defensa
-    # ========================
-    st.markdown("<div class='kpi-section'>", unsafe_allow_html=True)
-    st.markdown("<div class='kpi-title'>🛡️ Defensa</div>", unsafe_allow_html=True)
-    d1, d2, d3, d4 = st.columns(4)
-    with d1:
-        st.markdown(f"<div class='kpi-num'>{GA}</div><div class='kpi-label'>Goles en contra</div>", unsafe_allow_html=True)
-    with d2:
-        st.markdown(f"<div class='kpi-num'>{kpis['CleanSheets']}</div><div class='kpi-label'>Porterías en cero</div>", unsafe_allow_html=True)
-    with d3:
-        st.markdown(f"<div class='kpi-num'>{fmt_num(shots_ag)}</div><div class='kpi-label'>Tiros Ag.</div>", unsafe_allow_html=True)
-    with d4:
-        xg_ag_txt = "–" if xg_ag is None else f"{xg_ag:.2f}"
-        st.markdown(f"<div class='kpi-num'>{xg_ag_txt}</div><div class='kpi-label'>xG Ag.</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # ========================
-    # BLOQUE 4 — Eficiencia total
-    # ========================
-    st.markdown("<div class='kpi-section'>", unsafe_allow_html=True)
-    st.markdown("<div class='kpi-title'>🚀 Eficiencia total</div>", unsafe_allow_html=True)
-    e1, e2, e3, e4 = st.columns(4)
-    with e1:
-        st.markdown(f"<div class='kpi-num'>{DG}</div><div class='kpi-label'>Diferencia de goles</div>", unsafe_allow_html=True)
-    with e2:
-        gfpm_txt = "–" if gf_pm is None else f"{gf_pm:.2f}"
-        st.markdown(f"<div class='kpi-num'>{gfpm_txt}</div><div class='kpi-label'>GF por partido</div>", unsafe_allow_html=True)
-    with e3:
-        gapm_txt = "–" if ga_pm is None else f"{ga_pm:.2f}"
-        st.markdown(f"<div class='kpi-num'>{gapm_txt}</div><div class='kpi-label'>GA por partido</div>", unsafe_allow_html=True)
-    with e4:
-        xgb_txt = "–" if xg_bal is None else f"{xg_bal:+.2f}"
-        st.markdown(f"<div class='kpi-num'>{xgb_txt}</div><div class='kpi-label'>Balance xG (For−Ag)</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    
-    # ========================
-    # Jugadores destacados
-    # ========================
-    st.markdown("### 🧩 Jugadores destacados (Top performers)")
-
-    tops = top_performers(df_team, team_name=team_name)
-
-    # Primera fila: goleador, asistidor y portero
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric(
-            "Máximo anotador",
-            tops.get("max_scorer", "-"),
-            f'{tops.get("max_scorer_goals", 0)} goles'
-        )
-    with c2:
-        st.metric(
-            "Máximo asistidor",
-            tops.get("max_assist", "-"),
-            f'{tops.get("max_assists", 0)} asist.'
-        )
-    with c3:
-        st.metric(
-            "Mejor portero",
-            tops.get("top_shotstopper", "-"),
-            f'{tops.get("top_saves", 0)} atajadas'
-        )
-
-    # Segunda fila: jugador más central (PageRank)
-    c4, _ = st.columns([1, 1])
-    with c4:
-        st.metric(
-            "Jugador más influyente (red de pases)",
-            tops.get("most_central_player", "-"),
-            f'Centralidad: {tops.get("pagerank_score", 0):.4f}'
-        )
-
-
-    st.markdown("### 🕸️ Red de pases del equipo (PageRank)")
-    min_passes = st.slider("Umbral mínimo de conexiones (nº de pases entre dos jugadores)", 1, 10, 3, 1)
-
-    nodes_df, edges_df, pr_map, pr_top = build_pass_network(
-        df_team, team_name=team_name, min_passes=min_passes
-    )
-
-    if nodes_df.empty or edges_df.empty:
-        st.info("No hay suficientes pases para construir la red en esta selección.")
-    else:
-        st.caption(f"Jugador más influyente por PageRank: **{pr_top}**")
-        fig_net = plot_pass_network(nodes_df, edges_df, highlight=pr_top, title="Red de pases (conexiones ≥ umbral)")
-        st.plotly_chart(fig_net, use_container_width=True)
-
-        # (opcional) tabla top-10 por PageRank
-        st.markdown("#### Top-10 por centralidad (PageRank)")
-        st.dataframe(nodes_df[["player","pr","indeg","outdeg","total"]].head(5), use_container_width=True)
-
-    st.markdown("### Estilo de juego (v0 real)")
-    st.info(infer_style_summary(df_team, team_name=team_name))
-
-    st.markdown("### Zonas donde se anotan más goles")
-    xy = goals_xy_for_heatmap(df_team, team_name=team_name)
-    if xy.empty:
-        st.info("No hay goles registrados para el heatmap en la selección actual.")
-    else:
-        if _HAS_MPLSOCCER:
-            import matplotlib.pyplot as plt
-            pitch = Pitch(pitch_type='statsbomb', line_zorder=2)
-            fig, ax = pitch.draw(figsize=(10, 6))
-            hb = ax.hexbin(xy["x"], xy["y"], gridsize=20, extent=(0, 120, 0, 80), mincnt=1)
-            cbar = fig.colorbar(hb, ax=ax)
-            cbar.set_label('Frecuencia de goles')
-            ax.set_title("Mapa de calor – Zonas de gol")
-            st.pyplot(fig, use_container_width=True)
-        else:
-            fig = px.density_heatmap(xy, x="x", y="y", nbinsx=24, nbinsy=16, title="Mapa de calor – Zonas de gol")
-            fig.update_yaxes(autorange="reversed", range=[0,80])
-            fig.update_xaxes(range=[0,120])
-            st.plotly_chart(fig, use_container_width=True)
-
-# -------------------------------
-# Tab: Roster (placeholder)
-# -------------------------------
 with TAB_ROSTER:
-    st.subheader("Roster de jugadores (v0)")
-    st.info("En la siguiente iteración, poblaremos el roster real y métricas por jugador desde los eventos.")
 
+    st.subheader("Roster y recomendaciones por posición")
+
+    # 0) DataFrames de tu pipeline
+    ev_team = st.session_state.get("events_df_filtered_team")        # equipo base (ej. América)
+    ev_all  = st.session_state.get("events_df_filtered_allteams")    # mismos torneos, todos los equipos
+    if ev_all is None or ev_all.empty:
+        st.info("Aplica filtros de torneos en el sidebar; no hay eventos disponibles.")
+        st.stop()
+    if ev_team is None or ev_team.empty:
+        st.info("Selecciona un equipo en el sidebar para ver su roster.")
+        st.stop()
+
+    # 1) Builder v2 (tu helper con OBV nativo)
+    @st.cache_data(show_spinner=False)
+    def _build_players_v2(
+        df: pd.DataFrame,
+        normalize_by_position: bool = True,
+        min_minutes: float = 270.0,
+        use_total_net_direct: bool = False
+    ):
+        return ah_build_players_df_from_events_v2(
+            events=df,
+            roster_positions=None,
+            normalize_by_position=normalize_by_position,
+            add_position_relative_cols=True,
+            min_minutes=min_minutes,
+            use_total_net_direct=use_total_net_direct
+        )
+
+    players_df_team = _build_players_v2(ev_team, normalize_by_position=True)
+    players_df_all  = _build_players_v2(ev_all,  normalize_by_position=True)
+
+    # 2) Filtros UI
+    POS_LABELS = {"Porteros":"GK","Defensas":"DEF","Medios":"MID","Delanteros":"FWD"}
+    pos_label = st.radio("Posición", list(POS_LABELS.keys()), horizontal=True, index=2)
+    pos_code  = POS_LABELS[pos_label]
+
+    default_team = st.session_state.get("selected_team_name", None)
+    if default_team is None and "team" in ev_team.columns and not ev_team["team"].dropna().empty:
+        default_team = ev_team["team"].dropna().astype(str).value_counts().idxmax()
+    team_name   = st.text_input("Equipo base", value=default_team or "Club América")
+    minutes_min = st.slider("Minutos mínimos", 0, 4000, 300, 50)
+    top_n_reco  = st.slider("Top-N candidatos (otros equipos)", 5, 30, 12, 1)
+
+    # 3) Helpers de datos/UI
+    def _fmt_eff(x):
+        return "—" if (x is None or (isinstance(x, float) and (math.isnan(x) or np.isinf(x)))) else f"{x:.3f}"
+
+    def _initials_from_name(fullname: str) -> str:
+        parts = [p for p in (fullname or "").strip().split() if p]
+        if not parts: return "??"
+        if len(parts) == 1: return parts[0][:2].upper()
+        return (parts[0][0] + parts[-1][0]).upper()
+
+    def _avatar_svg_data_uri(initials: str, bg="#1f2937", fg="#ffffff") -> str:
+        svg = f'''
+                <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">
+                <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="{bg}"/><stop offset="1" stop-color="#111827"/>
+                </linearGradient></defs>
+                <rect width="240" height="240" rx="28" fill="url(#g)"/>
+                <text x="50%" y="52%" text-anchor="middle" dominant-baseline="middle"
+                        font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial"
+                        font-size="92" font-weight="800" fill="{fg}">{py_html.escape(initials)}</text>
+                </svg>'''
+        return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
+
+    def _photo_or_initials(name: str, photo_url: str | None) -> str:
+        if isinstance(photo_url, str) and photo_url.strip():
+            return photo_url
+        return _avatar_svg_data_uri(_initials_from_name(name))
+
+    # 4) Construir ROSTER (servidor)
+    mask_team = (players_df_team["position_group"] == pos_code) & (players_df_team["minutes"] >= minutes_min)
+    roster_df = (
+        players_df_team.loc[
+            mask_team,
+            ["player_id","player_name","minutes","efficiency","position_role","team"] +
+            (["photo_url"] if "photo_url" in players_df_team.columns else [])
+        ]
+        .drop_duplicates("player_id")
+        .sort_values("efficiency", ascending=False, na_position="last")
+        .reset_index(drop=True)
+    )
+    if roster_df.empty:
+        st.info(f"No hay jugadores de {team_name} que cumplan los criterios para {pos_label}.")
+        st.stop()
+
+    # 5) Construir CANDIDATOS por jugador (servidor) ⇒ lo mandamos ya listo al componente
+    base_cands = players_df_all.loc[
+        (players_df_all["position_group"] == pos_code) &
+        (players_df_all["team"] != team_name) &
+        (players_df_all["minutes"] >= minutes_min),
+        ["player_id","player_name","team","minutes","efficiency","position_role"] +
+        (["photo_url"] if "photo_url" in players_df_all.columns else [])
+    ].drop_duplicates("player_id").copy()
+
+    # Mapa: jugador_roster -> lista de candidatos (ya ordenados y truncados)
+    cand_map: dict[str, list[dict]] = {}
+    for _, r in roster_df.iterrows():
+        sel_role = r.get("position_role", None)
+        cands = base_cands.copy()
+        if sel_role is not None and "position_role" in cands.columns:
+            cands["priority"] = (cands["position_role"] == sel_role).astype(int)
+        else:
+            cands["priority"] = 0
+        cands = cands.sort_values(["priority","efficiency","minutes"], ascending=[False, False, False]).head(top_n_reco)
+
+        lst = []
+        for _, c in cands.iterrows():
+            cname = str(c.get("player_name","") or "")
+            cteam = str(c.get("team","") or "")
+            cmins = int(c.get("minutes",0) or 0)
+            ceff  = c.get("efficiency", None)
+            ceff_txt = _fmt_eff(ceff)
+            crole = str(c.get("position_role","") or "—")
+            cphoto = _photo_or_initials(cname, c.get("photo_url", None))
+            lst.append({
+                "name": cname,
+                "team": cteam,
+                "mins": cmins,
+                "eff_txt": ceff_txt,
+                "role": crole,
+                "photo": cphoto,
+            })
+        cand_map[str(r["player_name"])] = lst
+
+    # 6) Datos para el componente (roster cards)
+    roster_payload = []
+    for _, r in roster_df.iterrows():
+        name = str(r.get("player_name","") or "")
+        role = str(r.get("position_role","") or "—")
+        mins = int(r.get("minutes",0) or 0)
+        eff  = r.get("efficiency", None)
+        eff_txt = _fmt_eff(eff)
+        photo = _photo_or_initials(name, r.get("photo_url", None))
+        roster_payload.append({
+            "name": name,
+            "role": role,
+            "mins": mins,
+            "eff_txt": eff_txt,
+            "photo": photo
+        })
+
+    # 7) Render en UN SOLO componente: roster + candidatos (sin recargar)
+    html_prefix = textwrap.dedent(f"""
+        <!doctype html>
+        <html lang="es">
+        <head>
+        <meta charset="utf-8">
+        <style>
+            .hsnap {{ display:flex; gap:12px; overflow-x:auto; padding:8px 2px 14px; scroll-snap-type:x mandatory; }}
+            .hsnap::-webkit-scrollbar {{ height:10px; }}
+            .hsnap::-webkit-scrollbar-thumb {{ background:rgba(0,0,0,.25); border-radius:8px; }}
+            .card, .c-card {{
+            flex:0 0 auto; width:210px; scroll-snap-align:start; border:1px solid rgba(0,0,0,.08);
+            border-radius:14px; background:rgba(255,255,255,.92); box-shadow:0 1px 6px rgba(0,0,0,.06);
+            transition:transform .16s, box-shadow .16s, border-color .16s; text-decoration:none; color:inherit; padding:10px;
+            }}
+            .card:hover {{ transform:translateY(-2px); box-shadow:0 6px 22px rgba(0,0,0,.10); border-color:rgba(0,0,0,.16); }}
+            .card.selected {{ outline:2px solid rgba(99,102,241,.9); box-shadow:0 6px 22px rgba(99,102,241,.25); }}
+            .imgwrap {{ width:100%; height:130px; border-radius:10px; overflow:hidden; background:#e5e7eb; }}
+            .imgwrap img {{ width:100%; height:100%; object-fit:cover; display:block; }}
+            .name {{ font-weight:700; margin-top:8px; line-height:1.2; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+            .meta {{ margin-top:4px; font-size:12px; opacity:.8; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }}
+            .role {{ padding:2px 6px; border-radius:999px; border:1px solid rgba(0,0,0,.12); }}
+            .sep {{ opacity:.5; }}
+            .eff {{ margin-top:8px; display:flex; align-items:center; gap:8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New"; }}
+            .badge {{ font-size:11px; padding:2px 6px; border-radius:6px; border:1px solid rgba(0,0,0,.12); background:rgba(0,0,0,.04); font-weight:600; }}
+            .val {{ font-weight:700; }}
+            .teamchip {{
+            margin-top:6px; font-size:12px; padding:3px 8px; border-radius:999px;
+            border:1px solid rgba(0,0,0,.12); background:rgba(0,0,0,.035); display:inline-block;
+            max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+            }}
+            .section-title {{
+                            margin: 10px 0 4px;
+                            font-weight: 800;
+                            font-size: 16px;
+                            color: #ffffff;              /* ← texto blanco */
+                            }}
+
+                            .section-sub {{
+                            margin: -2px 0 8px;
+                            font-size: 12px;
+                            opacity: .9;
+                            color: #f1f1f1;              /* ← texto blanco/gris suave */
+                            }}
+            @media (max-width:420px) {{ .card, .c-card {{ width:72vw; }} }}
+        </style>
+        </head>
+        <body>
+        <div style="opacity:.8; font-size:13px; margin-bottom:4px;">
+            Roster de {py_html.escape(team_name)} — {py_html.escape(pos_label)} (ordenado por eficiencia)
+        </div>
+        <div id="roster" class="hsnap"></div>
+        <div id="selected_info" style="margin:6px 0 6px; font-size:14px;"></div>
+
+        <div id="cands_section" style="display:none;">
+            <div id="cands_title" class="section-title"></div>
+            <div class="section-sub">Mismo grupo posicional; prioridad a la misma posición fina.</div>
+            <div id="cands" class="hsnap"></div>
+        </div>
+        """)
+
+    # 👇 Bloque JS puro (NO es f-string)
+    html_script = """
+    <script>
+    // Decodificador Base64 → UTF-8 seguro
+    function b64json(b64) {
+        const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        const text = new TextDecoder('utf-8').decode(bytes);
+        return JSON.parse(text);
+    }
+
+    const ROSTER  = b64json('%s');
+    const CANDMAP = b64json('%s');
+
+    const rosterEl   = document.getElementById('roster');
+    const candsEl    = document.getElementById('cands');
+    const candsBox   = document.getElementById('cands_section');
+    const infoEl     = document.getElementById('selected_info');
+    const candsTitle = document.getElementById('cands_title');
+
+    function cardHTML(p, selectable=true) {
+        const cls = selectable ? 'card' : 'c-card';
+        const teamLine = (!selectable && p.team)
+        ? `<div class="teamchip" title="${p.team}">${p.team}</div>` : '';
+        return `
+        <div class="${cls}" data-name="${p.name}">
+            <div class="imgwrap"><img src="${p.photo}" alt="player"/></div>
+            <div class="name" title="${p.name}">${p.name}</div>
+            <div class="meta">
+            <span class="role">${p.role || '—'}</span><span class="sep">•</span><span class="mins">${p.mins}′</span>
+            </div>
+            <div class="eff"><span class="badge">EFF</span><span class="val">${p.eff_txt}</span></div>
+            ${teamLine}
+        </div>`;
+    }
+
+    // Render roster
+    rosterEl.innerHTML = ROSTER.map(p => cardHTML(p, true)).join('');
+
+    // Click sin recarga
+    rosterEl.addEventListener('click', (ev) => {
+        const card = ev.target.closest('.card');
+        if (!card) return;
+        const name = card.getAttribute('data-name');
+
+        rosterEl.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+
+        const player = ROSTER.find(x => x.name === name);
+        // Info breve arriba
+        infoEl.innerHTML = player
+        ? `<b>Jugador seleccionado:</b> ${player.name} • Posición: <i>${player.role || '—'}</i> • Eficiencia: <b>${player.eff_txt}</b>`
+        : '';
+
+        // 🔹 Subheader dinámico (visible siempre que hay selección)
+        candsTitle.textContent = `Mejores prospectos para sustituir a ${player ? player.name : name}`;
+
+        // Render candidatos
+        const lst = CANDMAP[name] || [];
+        if (!lst.length) {
+        candsEl.innerHTML = '<div style="opacity:.7;">No hay candidatos que cumplan con los filtros actuales.</div>';
+        } else {
+        candsEl.innerHTML = lst.map(p => cardHTML(p, false)).join('');
+        }
+
+        candsBox.style.display = 'block';
+        candsBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    </script>
+    </body></html>
+    """ % (
+        base64.b64encode(json.dumps(roster_payload, ensure_ascii=False).encode('utf-8')).decode('ascii'),
+        base64.b64encode(json.dumps(cand_map,      ensure_ascii=False).encode('utf-8')).decode('ascii'),
+    )
+
+    html_block = html_prefix + html_script
+    st_html(html_block, height=520, scrolling=True)
+    #.markdown('<div style="padding:8px;border:1px solid #ddd;border-radius:8px;">HOLA HTML</div>', unsafe_allow_html=True)
+    #st.write(ev_all[["obv_for_net","obv_against_net","obv_total_net"]].describe())
 # -------------------------------
 # Footer / Roadmap
 # -------------------------------
