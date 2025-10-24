@@ -356,9 +356,9 @@ if ev_all.empty:
     st.stop()
 
 # Subselección de columnas si existen (modo ligero)
-keep = [c for c in needed_cols if c in ev_all.columns]
-if keep:
-    ev_all = ev_all[keep].copy()
+#keep = [c for c in needed_cols if c in ev_all.columns]
+#if keep:
+#    ev_all = ev_all[keep].copy()
 
 # ================================
 # Selector de torneos (opcional)
