@@ -1,6 +1,6 @@
 """
 Streamlit MVP – ISAC Hackatón (Player Recommendation)
-Autor: MMillan 
+Autor: MMillan con apoyo de Chat =)
 
 Requisitos (requirements.txt)
 streamlit>=1.36
