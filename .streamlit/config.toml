@@ -6,4 +6,8 @@ maxUploadSize = 200
 showErrorDetails = false
 
 [theme]
-primaryColor = "#0b57d0"
+primaryColor = "#2A9D8F"         # Azul petróleo / verde azulado
+backgroundColor = "#1E1E1E"      # Gris grafito suave
+secondaryBackgroundColor = "#2C2C2C"  # Paneles laterales y tabs
+textColor = "#F2F2F2"            # Blanco grisáceo (evita alto contraste puro)
+font = "sans serif"      
