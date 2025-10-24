@@ -1,90 +1,122 @@
 # ISAC Scouting – Player Recommendation (Liga MX / Club América)
 
-Dashboard interactivo en **Streamlit** para analizar rendimiento de equipo y jugadores con datos de **StatsBomb (Events v8)**, estandarizados **per90**, con **normalización por posición (Z-scores)** y un **Score de Eficiencia** (ofensivo + defensivo – penalización por pérdidas). La herramienta también sugiere **reemplazos** en la liga con mejor ajuste posicional y de perfil.
+Dashboard interactivo en **Streamlit** para analizar el rendimiento del equipo y de los jugadores con datos de **StatsBomb (Events v8)**.  
+Los datos se transforman en métricas **por 90 minutos (per90)**, con la posibilidad de **normalizar por posición (Z-scores)** para comparar jugadores dentro de su rol, y calcular una **Eficiencia OBV** que resume el impacto neto ofensivo y defensivo de cada jugador.
 
-> Proyecto para el Hackatón ISAC – Player Recommendation.
+> Proyecto desarrollado para el **Hackatón ISAC – Player Recommendation**.
 
 ---
 
 ## ✨ ¿Qué hace la herramienta?
 
-- Integra **Events v8** de StatsBomb (pases, carries, tiros, duelos, presiones, OBV, etc.).
-- Normaliza métricas **por 90 min** para comparabilidad.
-- (Opcional) **Estandariza por posición** (Z-scores) para comparar jugadores dentro de su rol.
-- Calcula un **Score de Eficiencia** configurable (of + def – turnovers).
-- Arma **benchmarks** de liga y **radiales** por jugador.
-- Construye la **red de pases (PageRank)** del equipo con grosor de aristas por volumen de conexión.
-- Genera **recomendaciones** de jugadores (scouting) como posibles sustitutos por posición + perfil.
-- Soporta carga **ligera** (parquet filtrado) o **completa** (todas las columnas/partidos).
+- Integra datos de **StatsBomb Events v8** (pases, carries, tiros, duelos, presiones, OBV, etc.).
+- Calcula métricas **per90** para comparabilidad entre jugadores con distintas cargas de minutos.
+- Calcula una **Eficiencia basada en OBV (On-Ball Value)**, que mide el impacto neto de un jugador:
+  - **OBV ofensivo** (probabilidad de anotar generada).
+  - **OBV defensivo** (probabilidad de recibir reducida o aumentada).
+- Permite **normalizar la eficiencia por posición** (Z-score) para comparar jugadores solo dentro de su rol (GK, DEF, MID, FWD).
+- Genera **radiales**, **redes de pases (PageRank)** y **recomendaciones de reemplazo** en la liga según rendimiento.
+- Permite elegir entre **dataset completo** o **parquet filtrado** para optimizar rendimiento.
 
 ---
 
-## 🧮 Métrica de Eficiencia (resumen)
+## 🧮 Métrica de Eficiencia (resumen técnico)
 
-La **Eficiencia** sintetiza el impacto de un jugador combinando contribuciones ofensivas y defensivas, penalizando pérdidas:
+La **Eficiencia OBV** se basa en la diferencia entre el valor ofensivo y el valor en contra que un jugador aporta, ambos ajustados a 90 minutos de juego.
 
-\[
-\text{Eficiencia}_i \;=\; 
-\underbrace{\sum_k w_k^{(of)} \cdot \text{métrica}^{(per90)}_{ik}}_{\text{bloque ofensivo}}
-\;+\;
-\underbrace{\sum_m w_m^{(def)} \cdot \text{métrica}^{(per90)}_{im}}_{\text{bloque defensivo}}
-\;-\;
-\lambda \cdot \text{turnovers}_i^{(per90)}
-\]
+$$
+\mathrm{efficiency_{raw,i}} = \mathrm{obv_{off,per90,i}} - \mathrm{obv_{def,per90,i}}
+$$
 
-- **per90:** todas las métricas se llevan a base 90 minutos.  
-- **Z-score por posición (opcional):** si activas la normalización, primero se z-estandariza cada métrica dentro del “pool” de jugadores **de la misma posición** (evita sesgos por rol).
-- **Pesos (`w`) y λ:** configurables (por defecto equilibrados).  
-- **Turnovers:** pérdidas no forzadas/acciones negativas (ej. dispossessions, miscontrols, pases fallados en zonas críticas, etc., según tus columnas disponibles).
-- **Porteros:** por su rol atípico, la Eficiencia puede adaptarse usando mayor peso a **shot-stopping**, **xG on target faced**, **cross claims**, distribución, etc. (ya dejaste ganchos para un set de pesos específico de GK si lo decides).
+Donde:
 
-> Nota: Las columnas exactas se resuelven con *fallbacks* en `analytics_helpers.py` para tolerar variaciones del feed (nombres alternativos, presencia/ausencia de OBV, etc.).
+- **obv_off_per90** = suma de `obv_for_net` del jugador, escalada a 90 minutos.  
+- **obv_def_per90** = suma de `obv_against_net` del jugador, escalada a 90 minutos.  
+- Si existe la columna `obv_total_net` y se activa el parámetro `use_total_net_direct=True`, entonces:
+
+$$
+\mathrm{efficiency_{raw}} = \mathrm{obv_{total,net}} \times \frac{90}{\mathrm{minutos}}
+$$
+
+Luego se aplica, si está habilitado, una **normalización posicional** mediante un **Z-score** dentro del grupo de posición (GK, DEF, MID, FWD):
+
+$$
+\mathrm{efficiency_{pos,z}} = 
+\frac{
+\mathrm{efficiency_{raw}} - \mu_{\text{posición}}
+}{
+\sigma_{\text{posición}}
+}
+$$
+
+El valor final mostrado depende del parámetro `normalize_by_position`:
+
+- Si `True`:
+
+$$
+\mathrm{efficiency} = \mathrm{efficiency_{pos,z}}
+$$
+
+*(Z-score dentro del grupo posicional)*
+
+- Si `False`:
+
+$$
+\mathrm{efficiency} = \mathrm{efficiency_{raw}}
+$$
+
+*(valor absoluto en unidades OBV per90)*
+
+Además, se calcula el **percentil posicional** (`efficiency_pos_pct`) para ubicar al jugador dentro de su grupo de posición.
+
+> No se emplean pesos personalizados ni penalizaciones explícitas por pérdidas; las acciones negativas ya están **implícitamente reflejadas** en el OBV, que mide el cambio esperado en la probabilidad de anotar o conceder en la posesión siguiente.
 
 ---
-
 ## 🗂️ Tabs de la aplicación
 
 ### 1) **Inicio**
-- Resumen del objetivo del dashboard y cómo usar los filtros.
-- Contexto del **Score de Eficiencia** (qué mide, por qué per90, cuándo activar Z-scores).
-- Enlaces rápidos a documentación/credenciales (si aplica).
+- Presentación general de la herramienta.
+- Explicación del objetivo: evaluar rendimiento y buscar reemplazos con base en Eficiencia OBV.
+- Breve descripción de la métrica y cómo interpretar el puntaje.
 
 ### 2) **Club / Equipo**
 - Rendimiento agregado del equipo (por torneo o rango de partidos).
-- KPIs por fase (con/sin balón), tendencias, **per90** del equipo.
-- Filtros: competencia, rival, fecha, torneo.
+- KPIs de ataque, defensa y transición basados en OBV per90.
+- Filtros: competencia, rival, temporada o torneo.
 
 ### 3) **Roster**
-- Tarjetas de cada jugador con **minutos**, **Eficiencia** y **posición** (etiquetas con iniciales PN/PA).  
-- **Al hacer clic** en una tarjeta se muestran **debajo** los **prospectos** que pueden suplirlo (misma/similar posición, Eficiencia alta, buen ajuste de perfil).  
-- Scroll horizontal para revisar rápido todo el plantel (optimizado para parquet ligero).
+- Muestra tarjetas por jugador con **minutos jugados**, **eficiencia OBV** y **posición**.
+- **Click** en un jugador → muestra **recomendaciones** de sustitutos con eficiencia alta y misma posición.
+- Disposición **horizontal con scroll** para fácil exploración.
 
 ### 4) **Jugadores (Perfil & Radiales)**
-- Vista por jugador: **radar** de métricas clave (of/def), heatmaps (si están disponibles), tabla per90.
-- Benchmark vs **media de su posición** en la liga (cruza RAW vs Z si activas normalización).
-- Detalle por partido y acumulado.
+- Visualización individual: **radar** de métricas clave ofensivas y defensivas.
+- Comparativa vs. **media por posición** (RAW o Z-score).
+- Tablas de métricas per90 y rendimiento por partido.
 
 ### 5) **Comparativa RAW vs Z (por posición)**
-- Comparación lado a lado: métricas **brutas per90** vs **Z-score por posición**.
-- Útil para detectar perfiles **inflados por rol** vs **realmente diferenciales** dentro de su posición.
+- Compara valores **absolutos (per90)** y **normalizados (Z-score)** por posición.
+- Útil para detectar jugadores que destacan dentro de su rol.
 
 ### 6) **Red de Pases (PageRank)**
-- **Grafo de pases** del equipo: nodos (jugadores) y aristas (conexiones).
-- **Grosor de línea** ∝ volumen de pases entre dos jugadores.
-- **PageRank** identifica hubs/puentes de circulación.
-- Filtro de **umbral mínimo** de conexiones y **Top-N** a mostrar.
+- Grafo de conexiones de pases del equipo.
+- **Nodos** = jugadores, **aristas** = relaciones de pase.  
+  - Grosor ∝ cantidad de pases.  
+  - Tamaño ∝ centralidad de PageRank.
+- Ajuste de umbral mínimo de conexiones y top-N a mostrar.
 
 ### 7) **Scouting / Recomendaciones**
-- **Buscador** de reemplazos por posición con **Eficiencia** alta y perfil estadístico compatible.
-- Ranking de **mejor ajuste** (posición, pie, uso de balón, contribución of/def, métricas OBV si disponibles).
-- Descarga de shortlist (CSV) para trabajo posterior.
+- Busca jugadores de la liga con **eficiencia alta** y **perfil posicional compatible**.
+- Ranking ordenado por eficiencia (Z o RAW).
+- Descarga de shortlist en CSV.
 
 ### 8) **Configuración**
-- Parámetros de Eficiencia: **pesos of/def** y **λ** (penalización).
-- Activar/Desactivar **normalización por posición**.
-- Selección de dataset: **parquet ligero** vs **dataset completo**.
-- Paths de logos, assets y caché.
+- Parámetros principales:
+  - Activar/desactivar **normalización por posición**.
+  - Fijar **minutos mínimos** (default 270).
+  - Seleccionar **dataset (parquet filtrado o completo)**.
+  - Cambiar **logos o rutas de datos**.
 
 ---
 
-## 🧱 Estructura (sugerida)
+## 🧱 Estructura sugerida del proyecto
