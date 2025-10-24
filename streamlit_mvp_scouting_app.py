@@ -1089,12 +1089,4 @@ with TAB_ROSTER:
 # Footer / Roadmap
 # -------------------------------
 st.sidebar.divider()
-st.sidebar.markdown(
-    """
-    **Roadmap inmediato**
-    1) Métricas por jugador (xG/xA, tiros, presiones, duelos, intercepciones).
-    2) Radar real de estilo (porcentajes exactos por dimensión).
-    3) Shortlist de reemplazos basados en debilidades detectadas.
-    4) Exportables (CSV/Excel) y bookmarks de filtros.
-    """
-)
+
