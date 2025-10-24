@@ -411,14 +411,28 @@ TAB_INICIO, TAB_AMERICA, TAB_ROSTER = st.tabs(["🏁 Inicio", "🦅 Club Améric
 # -------------------------------
 with TAB_INICIO:
     st.subheader("¿Qué puedes observar en esta herramienta?")
-    st.markdown(
-        """
-        - **Comportamiento del equipo**: KPIs del/los torneos seleccionados.
-        - **Estilo de juego**: resumen heurístico (open play, balón parado, contraataque, media distancia, juego aéreo).
-        - **Zonas de impacto**: Heatmap de **goles** (coordenadas StatsBomb 120×80).
-        - **Roster**: vista por jugador (iteraremos con métricas reales a continuación).
-        """
-    )
+    st.markdown("""
+      ## 🧠 ISAC Scouting – Club América
+      
+      Esta herramienta permite explorar el rendimiento del **Club América** y de todos los equipos de la **Liga MX** a partir de datos oficiales de **StatsBomb**.  
+      Su objetivo es ofrecer una **radiografía completa del desempeño del equipo** en diferentes torneos y contextos, permitiendo seleccionar **competencias específicas** para analizar tendencias colectivas y rendimientos individuales.
+      
+      A partir de los eventos de cada partido, se calcula un **score de eficiencia** para cada jugador, que resume su aporte ofensivo y defensivo en unidades comparables (*por 90 minutos*).  
+      Este puntaje integra métricas clave como pases progresivos, recuperaciones, regates exitosos, tiros, pérdidas y contribuciones en valor de posesión (*OBV*), ofreciendo una visión equilibrada de la **efectividad total del jugador en el campo**.
+      
+      Con base en este score, la herramienta identifica a los **jugadores más destacados de la liga** que podrían **sustituir o complementar** a los actuales integrantes del América según posición y estilo de juego.
+      
+      ---
+      
+      ### 🔍 Navegación de la herramienta
+      
+      - **Inicio:** descripción general del proyecto y su objetivo.  
+      - **Club América:** análisis detallado del desempeño colectivo, redes de pase, xG y métricas tácticas.  
+      - **Roster:** exploración del rendimiento individual de cada jugador del América y recomendaciones de sustitutos potenciales dentro de la liga.  
+      - **Comparativas:** análisis cruzado entre jugadores, posiciones o torneos.  
+      - **Scouting:** búsqueda avanzada de talentos según atributos, eficiencia y similitud posicional.
+      """)
+
 
 # -------------------------------
 # Tab: Club América (análisis real)
