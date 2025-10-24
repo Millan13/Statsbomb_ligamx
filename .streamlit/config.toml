@@ -1,0 +1,9 @@
+[server]
+runOnSave = false
+maxUploadSize = 200
+
+[client]
+showErrorDetails = false
+
+[theme]
+primaryColor = "#0b57d0"
