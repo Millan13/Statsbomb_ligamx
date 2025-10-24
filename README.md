@@ -7,7 +7,7 @@ Los datos se transforman en métricas **por 90 minutos (per90)**, con la posibil
 
 ---
 
-## ✨ ¿Qué hace la herramienta?
+##  ¿Qué hace la herramienta?
 
 - Integra datos de **StatsBomb Events v8** (pases, carries, tiros, duelos, presiones, OBV, etc.).
 - Calcula métricas **per90** para comparabilidad entre jugadores con distintas cargas de minutos.
@@ -20,7 +20,7 @@ Los datos se transforman en métricas **por 90 minutos (per90)**, con la posibil
 
 ---
 
-## 🧮 Métrica de Eficiencia (resumen técnico)
+##  Métrica de Eficiencia (resumen técnico)
 
 La **Eficiencia OBV** se basa en la diferencia entre el valor ofensivo y el valor en contra que un jugador aporta, ambos ajustados a 90 minutos de juego.
 
@@ -72,7 +72,7 @@ Además, se calcula el **percentil posicional** (`efficiency_pos_pct`) para ubic
 > No se emplean pesos personalizados ni penalizaciones explícitas por pérdidas; las acciones negativas ya están **implícitamente reflejadas** en el OBV, que mide el cambio esperado en la probabilidad de anotar o conceder en la posesión siguiente.
 
 ---
-## 🗂️ Tabs de la aplicación
+##  Tabs de la aplicación
 
 ### 1) **Inicio**
 - Presentación general de la herramienta.
@@ -89,34 +89,3 @@ Además, se calcula el **percentil posicional** (`efficiency_pos_pct`) para ubic
 - **Click** en un jugador → muestra **recomendaciones** de sustitutos con eficiencia alta y misma posición.
 - Disposición **horizontal con scroll** para fácil exploración.
 
-### 4) **Jugadores (Perfil & Radiales)**
-- Visualización individual: **radar** de métricas clave ofensivas y defensivas.
-- Comparativa vs. **media por posición** (RAW o Z-score).
-- Tablas de métricas per90 y rendimiento por partido.
-
-### 5) **Comparativa RAW vs Z (por posición)**
-- Compara valores **absolutos (per90)** y **normalizados (Z-score)** por posición.
-- Útil para detectar jugadores que destacan dentro de su rol.
-
-### 6) **Red de Pases (PageRank)**
-- Grafo de conexiones de pases del equipo.
-- **Nodos** = jugadores, **aristas** = relaciones de pase.  
-  - Grosor ∝ cantidad de pases.  
-  - Tamaño ∝ centralidad de PageRank.
-- Ajuste de umbral mínimo de conexiones y top-N a mostrar.
-
-### 7) **Scouting / Recomendaciones**
-- Busca jugadores de la liga con **eficiencia alta** y **perfil posicional compatible**.
-- Ranking ordenado por eficiencia (Z o RAW).
-- Descarga de shortlist en CSV.
-
-### 8) **Configuración**
-- Parámetros principales:
-  - Activar/desactivar **normalización por posición**.
-  - Fijar **minutos mínimos** (default 270).
-  - Seleccionar **dataset (parquet filtrado o completo)**.
-  - Cambiar **logos o rutas de datos**.
-
----
-
-## 🧱 Estructura sugerida del proyecto
