@@ -1,115 +1,90 @@
-# Statsbomb_ligamx
-Repositorio para el hackaton del ISAC ITAM con análisis de rendimiento de club américa
+# ISAC Scouting – Player Recommendation (Liga MX / Club América)
 
+Dashboard interactivo en **Streamlit** para analizar rendimiento de equipo y jugadores con datos de **StatsBomb (Events v8)**, estandarizados **per90**, con **normalización por posición (Z-scores)** y un **Score de Eficiencia** (ofensivo + defensivo – penalización por pérdidas). La herramienta también sugiere **reemplazos** en la liga con mejor ajuste posicional y de perfil.
 
-## ⚽️ Métrica de Eficiencia Compuesta (Composite Efficiency v1)
-
-La **Eficiencia Compuesta v1** es un indicador unificado del rendimiento de cada jugador, calculado a partir de los eventos individuales (StatsBomb Events v8).  
-A diferencia de métricas que dependen de modelos de Expected Goals (xG) o de *On-Ball Value (OBV)*, esta métrica se basa en **acciones observables** y **contribuciones directas** dentro del juego, normalizadas por 90 minutos y ponderadas según la **posición del jugador**.
-
-
-La métrica de eficiencia compuesta mide cuánto aporta realmente un jugador a su equipo durante un partido, considerando tanto sus acciones positivas como los errores que comete.
-En lugar de fijarse solo en goles o asistencias, analiza todo lo que pasa cuando el jugador interviene: pases progresivos, recuperaciones, duelos ganados, tiros, pérdidas de balón, entre otros.
-Cada acción tiene un peso diferente según la posición —por ejemplo, los delanteros son valorados más por generar peligro y los defensas por recuperar o bloquear jugadas—.
-Al final, todos esos aportes se combinan en un solo puntaje por 90 minutos, que refleja la influencia real y equilibrada del jugador en el juego, independientemente de si marcó gol o no.
----
-
-### 🔍 1. Enfoque general
-
-Para cada jugador, se calculan una serie de **features por 90 minutos** (`per90`):
-
-| Categoría | Variables principales |
-|------------|------------------------|
-| **Ofensivas** | `xg`, `shots`, `key_passes`, `prog_passes`, `carries_prog`, `box_entries` |
-| **Defensivas** | `pressures`, `recoveries`, `tib` (tackles + interceptions + blocks), `clearances`, `duels_won` |
-| **Negativas (pérdidas)** | `turnovers_raw` (miscontrols, dispossessed, dribbles fallidos y pases incompletos) |
-| **Distribución / Control** | `pass_attempts`, `pass_completed`, `pass_completion` |
-
-Cada métrica se normaliza en unidades *por 90 minutos* para garantizar comparabilidad entre jugadores con diferentes cargas de juego:
-
-$$
-valor_{per90} = \frac{\text{conteo}}{\text{minutos}} \times 90
-$$
+> Proyecto para el Hackatón ISAC – Player Recommendation.
 
 ---
 
-### ⚙️ 2. Pesos diferenciales por grupo posicional
+## ✨ ¿Qué hace la herramienta?
 
-No todas las acciones tienen el mismo impacto según la posición.  
-Por ejemplo, los delanteros son evaluados principalmente por **productividad ofensiva**, mientras que los defensas lo son por **acciones de recuperación y contención**.  
-Por ello, la fórmula de eficiencia utiliza **ponderaciones distintas** para cada grupo:
-
-#### 🧤 Porteros (GK)
-- +0.50 × `recoveries` (participación tipo sweeper)
-- +0.30 × `clearances`
-- +0.80 × (`pass_completion` − 0.75)  _(por encima del promedio 75%)_
-- −0.20 × `turnovers_raw`
-
-#### 🧱 Defensas (DEF)
-- +0.90 × `tib`  (tackles + interceptions + blocks)
-- +0.70 × `clearances`
-- +0.60 × `duels_won`
-- +0.40 × `recoveries`
-- +0.20 × `prog_passes`
-- −0.35 × `turnovers_raw`
-
-#### ⚙️ Mediocampistas (MID)
-- +0.75 × `prog_passes`
-- +0.65 × `carries_prog`
-- +0.60 × `key_passes`
-- +0.45 × `recoveries`
-- +0.35 × `pressures`
-- +0.50 × `tib`
-- −0.45 × `turnovers_raw`
-
-#### 🎯 Delanteros (FWD)
-- +1.20 × `xg`
-- +0.70 × `box_entries`
-- +0.60 × `key_passes`
-- +0.45 × `carries_prog`
-- +0.40 × `prog_passes`
-- −0.60 × `turnovers_raw`
+- Integra **Events v8** de StatsBomb (pases, carries, tiros, duelos, presiones, OBV, etc.).
+- Normaliza métricas **por 90 min** para comparabilidad.
+- (Opcional) **Estandariza por posición** (Z-scores) para comparar jugadores dentro de su rol.
+- Calcula un **Score de Eficiencia** configurable (of + def – turnovers).
+- Arma **benchmarks** de liga y **radiales** por jugador.
+- Construye la **red de pases (PageRank)** del equipo con grosor de aristas por volumen de conexión.
+- Genera **recomendaciones** de jugadores (scouting) como posibles sustitutos por posición + perfil.
+- Soporta carga **ligera** (parquet filtrado) o **completa** (todas las columnas/partidos).
 
 ---
 
-### 🧮 3. Fórmula general
+## 🧮 Métrica de Eficiencia (resumen)
 
-$$
-\text{Eficiencia}_i = \sum_j \text{peso}_j \cdot \text{métrica}_{ij}^{(per90)} - \lambda \cdot \text{turnovers}_{i}^{(per90)}
-$$
+La **Eficiencia** sintetiza el impacto de un jugador combinando contribuciones ofensivas y defensivas, penalizando pérdidas:
 
-donde:  
-- \( i \) = jugador  
-- \( j \) = acción relevante según la posición  
-- \( \lambda \) = penalización proporcional al tipo de acción negativa
+\[
+\text{Eficiencia}_i \;=\; 
+\underbrace{\sum_k w_k^{(of)} \cdot \text{métrica}^{(per90)}_{ik}}_{\text{bloque ofensivo}}
+\;+\;
+\underbrace{\sum_m w_m^{(def)} \cdot \text{métrica}^{(per90)}_{im}}_{\text{bloque defensivo}}
+\;-\;
+\lambda \cdot \text{turnovers}_i^{(per90)}
+\]
 
----
+- **per90:** todas las métricas se llevan a base 90 minutos.  
+- **Z-score por posición (opcional):** si activas la normalización, primero se z-estandariza cada métrica dentro del “pool” de jugadores **de la misma posición** (evita sesgos por rol).
+- **Pesos (`w`) y λ:** configurables (por defecto equilibrados).  
+- **Turnovers:** pérdidas no forzadas/acciones negativas (ej. dispossessions, miscontrols, pases fallados en zonas críticas, etc., según tus columnas disponibles).
+- **Porteros:** por su rol atípico, la Eficiencia puede adaptarse usando mayor peso a **shot-stopping**, **xG on target faced**, **cross claims**, distribución, etc. (ya dejaste ganchos para un set de pesos específico de GK si lo decides).
 
-### 🎯 4. Interpretación
-
-- **Valor alto de eficiencia** → jugador que contribuye consistentemente a la fase dominante de su rol (ataque o defensa) con bajo costo en pérdidas.  
-- **Valor medio (≈0)** → participación equilibrada o bajo volumen de acciones.  
-- **Valor negativo** → jugador con participación frecuente pero de baja efectividad o con alto número de pérdidas.
-
-La escala no representa goles esperados ni goles anotados, sino **impacto relativo por 90 minutos dentro de su grupo posicional**.
-
----
-
-### 📈 5. Ventajas del modelo
-
-- **Posición-aware:** adapta automáticamente las ponderaciones según el rol del jugador (`GK`, `DEF`, `MID`, `FWD`).
-- **Independiente de modelos predictivos:** se basa en conteos reales y no requiere un modelo de probabilidad como xG o VAEP.
-- **Interpretable:** cada componente de la fórmula es tangible y puede visualizarse o auditarse.
-- **Comparable entre jugadores:** normalización por 90 minutos permite comparar rendimientos independientemente del tiempo jugado.
-- **Flexible:** las ponderaciones pueden ajustarse según la liga, el club o la filosofía de juego.
+> Nota: Las columnas exactas se resuelven con *fallbacks* en `analytics_helpers.py` para tolerar variaciones del feed (nombres alternativos, presencia/ausencia de OBV, etc.).
 
 ---
 
-### 📊 6. Uso en el dashboard
+## 🗂️ Tabs de la aplicación
 
-En la pestaña **Roster**, la métrica `efficiency` se utiliza para:
-- Ordenar el **roster del equipo base** (ej. Club América) por rendimiento.
-- Identificar **jugadores candidatos** de otros equipos dentro del **mismo grupo posicional**.
-- Priorizar reemplazos con **posición fina similar** (`position_role`, ej. *Right Center Midfield*).
+### 1) **Inicio**
+- Resumen del objetivo del dashboard y cómo usar los filtros.
+- Contexto del **Score de Eficiencia** (qué mide, por qué per90, cuándo activar Z-scores).
+- Enlaces rápidos a documentación/credenciales (si aplica).
 
-Esta métrica permite comparar objetivamente jugadores en contextos similares, equilibrando producción ofensiva, aportes defensivos y control del balón.
+### 2) **Club / Equipo**
+- Rendimiento agregado del equipo (por torneo o rango de partidos).
+- KPIs por fase (con/sin balón), tendencias, **per90** del equipo.
+- Filtros: competencia, rival, fecha, torneo.
+
+### 3) **Roster**
+- Tarjetas de cada jugador con **minutos**, **Eficiencia** y **posición** (etiquetas con iniciales PN/PA).  
+- **Al hacer clic** en una tarjeta se muestran **debajo** los **prospectos** que pueden suplirlo (misma/similar posición, Eficiencia alta, buen ajuste de perfil).  
+- Scroll horizontal para revisar rápido todo el plantel (optimizado para parquet ligero).
+
+### 4) **Jugadores (Perfil & Radiales)**
+- Vista por jugador: **radar** de métricas clave (of/def), heatmaps (si están disponibles), tabla per90.
+- Benchmark vs **media de su posición** en la liga (cruza RAW vs Z si activas normalización).
+- Detalle por partido y acumulado.
+
+### 5) **Comparativa RAW vs Z (por posición)**
+- Comparación lado a lado: métricas **brutas per90** vs **Z-score por posición**.
+- Útil para detectar perfiles **inflados por rol** vs **realmente diferenciales** dentro de su posición.
+
+### 6) **Red de Pases (PageRank)**
+- **Grafo de pases** del equipo: nodos (jugadores) y aristas (conexiones).
+- **Grosor de línea** ∝ volumen de pases entre dos jugadores.
+- **PageRank** identifica hubs/puentes de circulación.
+- Filtro de **umbral mínimo** de conexiones y **Top-N** a mostrar.
+
+### 7) **Scouting / Recomendaciones**
+- **Buscador** de reemplazos por posición con **Eficiencia** alta y perfil estadístico compatible.
+- Ranking de **mejor ajuste** (posición, pie, uso de balón, contribución of/def, métricas OBV si disponibles).
+- Descarga de shortlist (CSV) para trabajo posterior.
+
+### 8) **Configuración**
+- Parámetros de Eficiencia: **pesos of/def** y **λ** (penalización).
+- Activar/Desactivar **normalización por posición**.
+- Selección de dataset: **parquet ligero** vs **dataset completo**.
+- Paths de logos, assets y caché.
+
+---
+
+## 🧱 Estructura (sugerida)
