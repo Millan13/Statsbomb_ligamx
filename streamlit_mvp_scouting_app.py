@@ -329,7 +329,7 @@ with st.sidebar:
     path_clausura = join_gs(gcs_prefix, clausura_parquet)
 
     team_name = st.text_input("Equipo", value="América")
-    st.caption("Leemos 1 sola vez (cache). Todo lo demás son filtros en memoria.")
+    #st.caption("Leemos 1 sola vez (cache). Todo lo demás son filtros en memoria.")
 
 # ================================
 # Lectura ÚNICA
