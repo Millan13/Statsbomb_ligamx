@@ -992,7 +992,7 @@ with TAB_ROSTER:
         </style>
         </head>
         <body>
-        <div style="opacity:.8; font-size:13px; margin-bottom:4px;">
+        <div style="opacity:.8; font-size:13px;color: #f1f1f1; margin-bottom:4px;">
             Roster de {py_html.escape(team_name)} — {py_html.escape(pos_label)} (ordenado por eficiencia)
         </div>
         <div id="roster" class="hsnap"></div>
