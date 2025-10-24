@@ -397,10 +397,381 @@ st.session_state["events_df_filtered_team"] = df_team.copy()
 # ================================
 # Resumen / vista rápida
 # ================================
-st.success(f"Eventos cargados: {len(df_team):,}  |  Torneos: {', '.join(selected_torneos) if selected_torneos else '—'}")
-st.dataframe(df_team.head())
+#st.success(f"Eventos cargados: {len(df_team):,}  |  Torneos: {', '.join(selected_torneos) if selected_torneos else '—'}")
+#st.dataframe(df_team.head())
 
 
+# -------------------------------
+# Pestañas
+# -------------------------------
+TAB_INICIO, TAB_AMERICA, TAB_ROSTER = st.tabs(["🏁 Inicio", "🦅 Club América", "👥 Roster"])
+
+# -------------------------------
+# Tab: Inicio (explicación + selección)
+# -------------------------------
+with TAB_INICIO:
+    st.subheader("¿Qué puedes observar en esta herramienta?")
+    st.markdown(
+        """
+        - **Comportamiento del equipo**: KPIs del/los torneos seleccionados.
+        - **Estilo de juego**: resumen heurístico (open play, balón parado, contraataque, media distancia, juego aéreo).
+        - **Zonas de impacto**: Heatmap de **goles** (coordenadas StatsBomb 120×80).
+        - **Roster**: vista por jugador (iteraremos con métricas reales a continuación).
+        """
+    )
+
+# -------------------------------
+# Tab: Club América (análisis real)
+# -------------------------------
+with TAB_AMERICA:
+    st.subheader(f"Resumen Torneo: {', '.join(selected_torneos)}")
+
+    # KPIs y máximos
+    #kpis, matches_agg = compute_kpis_from_matches(df_team, team_name=team_name)
+
+    # df_sel = eventos de los torneos seleccionados (ambos equipos)
+    kpis, matches_agg = compute_kpis_from_matches(df_sel, team_name=team_name)
+    #team_col = "team" if "team" in df_sel.columns else ("team_name" if "team_name" in df_sel.columns else "possession_team_name")
+    #st.write("Teams in df_sel:", df_sel[team_col].value_counts().to_frame("rows"))
+
+
+    # ========================
+    # ESTILO: cards y tipografías
+    # ========================
+    st.markdown("""
+    <style>
+    .kpi-section {
+    padding: 16px 18px; border-radius: 16px; margin: 10px 0 18px 0;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    }
+    .kpi-title {
+    font-size: 1.1rem; font-weight: 700; letter-spacing: .3px; margin-bottom: 12px;
+    }
+    .kpi-subtle { color: #9aa0a6; font-size: .9rem; }
+    .kpi-num { font-size: 1.8rem; font-weight: 800; line-height: 1; }
+    .kpi-label { font-size: .86rem; color: #c9cdd3; margin-top: 4px; }
+    .kpi-split { display:flex; gap:16px; margin-top: 8px; }
+    .kpi-pill {
+    display:inline-block; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.12); font-size:.78rem; color:#cbd5e1;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    def fmt_pct(x):
+        import math
+        if x is None or (isinstance(x, float) and (math.isnan(x) or math.isinf(x))):
+            return "–"
+        return f"{x*100:.1f}%"
+
+    def fmt_num(x):
+        return "–" if x is None else f"{x:,}"
+
+    def safe_div(a, b):
+        return (a / b) if b and b != 0 else None
+
+    # Derivados útiles
+    PJ = kpis.get("PJ", 0)
+    GF = kpis.get("GoalsFor", 0)
+    GA = kpis.get("GoalsAgainst", 0)
+    DG = kpis.get("GoalDiff", 0)
+    shots_for = kpis.get("ShotsFor", None)
+    shots_ag  = kpis.get("ShotsAgainst", None)
+    conv = kpis.get("ConversionRate", None)
+    xg_for = kpis.get("xG_for", None)
+    xg_ag  = kpis.get("xG_against", None)
+    xg_bal = (xg_for - xg_ag) if (xg_for is not None and xg_ag is not None) else None
+    gf_pm  = safe_div(GF, PJ)
+    ga_pm  = safe_div(GA, PJ)
+
+    # ========================
+    # BLOQUE 1 — Rendimiento global
+    # ========================
+    #st.markdown("<div class='kpi-section'>", unsafe_allow_html=True)
+    #st.markdown("<div class='kpi-title'>📊 Rendimiento global</div>", unsafe_allow_html=True)
+    # st.markdown("""
+    #             <div class='kpi-section'>
+    #                 <div class='kpi-title'>📊 Rendimiento global</div>
+    #             </div>
+    #             """, unsafe_allow_html=True)
+ 
+
+    # ---- CSS global (solo lo pones una vez al inicio de la app) ----
+    st.markdown("""
+    <style>
+    .kpi-section {
+        width: 100%;
+        background-color: #1e1e1e;
+        border-radius: 10px;
+        padding: 3px 12px;
+        display: flex;
+        align-items: center;
+        height: 36px;
+        box-shadow: 0 1px 3px rgba(255, 255, 255, 0.05),
+                    0 2px 6px rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        margin-bottom: 1rem; /* separa visualmente secciones */
+    }
+    .kpi-title {
+        font-weight: 700;
+        font-size: 1.05rem;
+        color: white;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    def render_kpi_section(titulo: str, emoji: str = "📊"):
+        st.markdown(
+            f"""
+            <div class='kpi-section'>
+                <div class='kpi-title'>{emoji} {titulo}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    # --- Ejemplo de uso ---
+    render_kpi_section("Rendimiento global", "📊")
+
+
+
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: st.plotly_chart(donut_kpi("PJ", kpis["PJ"], max(kpis["PJ"],1)), use_container_width=True)
+    with c2: st.plotly_chart(donut_kpi("G", kpis["G"], kpis["PJ"], "#28a745"), use_container_width=True)
+    with c3: st.plotly_chart(donut_kpi("E", kpis["E"], kpis["PJ"], "#ffc107"), use_container_width=True)
+    with c4: st.plotly_chart(donut_kpi("P", kpis["P"], kpis["PJ"], "#dc3545"), use_container_width=True)
+
+    g1, g2, g3, g4 = st.columns(4)
+    with g1:
+        st.empty()
+    with g2:
+        st.markdown(f"<div class='kpi-num'>{kpis['Points']}</div><div class='kpi-label'>Puntos</div>", unsafe_allow_html=True)
+    with g3:
+        st.markdown(f"<div class='kpi-num'>{fmt_pct(kpis['WinRate'])}</div><div class='kpi-label'>Win%</div>", unsafe_allow_html=True)
+    with g4:
+        st.empty()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ========================
+    # BLOQUE 2 — Ataque
+    # ========================
+    render_kpi_section("Ataque", "⚽️")
+    #st.markdown("<div class='kpi-section'>", unsafe_allow_html=True)
+    #st.markdown("<div class='kpi-title'>⚽️ Ataque</div>", unsafe_allow_html=True)
+    a1, a2, a3, a4 = st.columns(4)
+    with a1:
+        st.markdown(f"<div class='kpi-num'>{GF}</div><div class='kpi-label'>Goles a favor</div>", unsafe_allow_html=True)
+    with a2:
+        st.markdown(f"<div class='kpi-num'>{fmt_num(shots_for)}</div><div class='kpi-label'>Tiros For</div>", unsafe_allow_html=True)
+    with a3:
+        st.markdown(f"<div class='kpi-num'>{fmt_pct(conv)}</div><div class='kpi-label'>Conv%</div>", unsafe_allow_html=True)
+    with a4:
+        xg_for_txt = "–" if xg_for is None else f"{xg_for:.2f}"
+        st.markdown(f"<div class='kpi-num'>{xg_for_txt}</div><div class='kpi-label'>xG For</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ========================
+    # BLOQUE 3 — Defensa
+    # ========================
+    render_kpi_section("Defensa", "🛡️")
+    # st.markdown("<div class='kpi-section'>", unsafe_allow_html=True)
+    # st.markdown("<div class='kpi-title'>🛡️ Defensa</div>", unsafe_allow_html=True)
+    d1, d2, d3, d4 = st.columns(4)
+    with d1:
+        st.markdown(f"<div class='kpi-num'>{GA}</div><div class='kpi-label'>Goles en contra</div>", unsafe_allow_html=True)
+    with d2:
+        st.markdown(f"<div class='kpi-num'>{kpis['CleanSheets']}</div><div class='kpi-label'>Porterías en cero</div>", unsafe_allow_html=True)
+    with d3:
+        st.markdown(f"<div class='kpi-num'>{fmt_num(shots_ag)}</div><div class='kpi-label'>Tiros Ag.</div>", unsafe_allow_html=True)
+    with d4:
+        xg_ag_txt = "–" if xg_ag is None else f"{xg_ag:.2f}"
+        st.markdown(f"<div class='kpi-num'>{xg_ag_txt}</div><div class='kpi-label'>xG Ag.</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ========================
+    # BLOQUE 4 — Eficiencia total
+    # ========================
+    render_kpi_section("Eficiencia total", "🚀")
+    # st.markdown("<div class='kpi-section'>", unsafe_allow_html=True)
+    # st.markdown("<div class='kpi-title'>🚀 Eficiencia total</div>", unsafe_allow_html=True)
+    e1, e2, e3, e4 = st.columns(4)
+    with e1:
+        st.markdown(f"<div class='kpi-num'>{DG}</div><div class='kpi-label'>Diferencia de goles</div>", unsafe_allow_html=True)
+    with e2:
+        gfpm_txt = "–" if gf_pm is None else f"{gf_pm:.2f}"
+        st.markdown(f"<div class='kpi-num'>{gfpm_txt}</div><div class='kpi-label'>GF por partido</div>", unsafe_allow_html=True)
+    with e3:
+        gapm_txt = "–" if ga_pm is None else f"{ga_pm:.2f}"
+        st.markdown(f"<div class='kpi-num'>{gapm_txt}</div><div class='kpi-label'>GA por partido</div>", unsafe_allow_html=True)
+    with e4:
+        xgb_txt = "–" if xg_bal is None else f"{xg_bal:+.2f}"
+        st.markdown(f"<div class='kpi-num'>{xgb_txt}</div><div class='kpi-label'>Balance xG (For−Ag)</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    
+    # ========================
+    # Jugadores destacados
+    # ========================
+    st.markdown("### Jugadores destacados (Top performers)  🧩")
+
+    tops = top_performers(df_team, team_name=team_name)
+
+    st.markdown("""
+    <style>
+    .metric-box {
+        background-color: #1e1e1e;
+        border-radius: 10px;
+        padding: 10px 12px;
+        text-align: center;
+        box-shadow: 0 1px 3px rgba(255,255,255,0.05),
+                    0 2px 6px rgba(0,0,0,0.3);
+        border: 1px solid rgba(255,255,255,0.07);
+        height: auto;           /* 👈 se ajusta dinámicamente al texto */
+        min-height: 90px;       /* 👈 garantiza uniformidad */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    .metric-title {
+        font-size: 0.85rem;
+        color: #CCCCCC;
+        margin-bottom: 6px;
+    }
+    .metric-value {
+        font-size: 1rem;
+        font-weight: 700;
+        color: white;
+        line-height: 1.2;
+        word-wrap: break-word;   /* 👈 evita desbordes */
+        overflow-wrap: break-word;
+    }
+    .metric-sub {
+        font-size: 0.85rem;
+        color: #4CAF50;          /* 👈 verde KPI */
+        font-weight: 700;        /* 👈 negritas */
+        margin-top: 4px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+    # ---- Layout con columnas ----
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.markdown(f"""
+        <div class='metric-box'>
+            <div class='metric-title'>Máximo anotador</div>
+            <div class='metric-value'>{tops.get("max_scorer", "-").replace(" ", "<br>")}</div>
+            <div class='metric-sub'>{tops.get("max_scorer_goals", 0)} goles</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c2:
+        st.markdown(f"""
+        <div class='metric-box'>
+            <div class='metric-title'>Máximo asistidor</div>
+            <div class='metric-value'>{tops.get("max_assist", "-").replace(" ", "<br>")}</div>
+            <div class='metric-sub'>{tops.get("max_assists", 0)} asist.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c3:
+        st.markdown(f"""
+        <div class='metric-box'>
+            <div class='metric-title'>Mejor portero</div>
+            <div class='metric-value'>{tops.get("top_shotstopper", "-").replace(" ", "<br>")}</div>
+            <div class='metric-sub'>{tops.get("top_saves", 0)} atajadas</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # st.markdown("### Jugador más influyente (red de pases) 🕸️")
+
+    # # Segunda fila: jugador más central (PageRank)
+    # c4, _ = st.columns([1, 1])
+    # with c4:
+    #     st.metric(
+    #         "",
+    #         tops.get("most_central_player", "-"),
+    #         f'Centralidad: {tops.get("pagerank_score", 0):.4f}'
+    #     )
+
+
+    st.markdown("### Red de pases del equipo (PageRank) 🕸️")
+    min_passes = st.slider("Umbral mínimo de conexiones (nº de pases entre dos jugadores)", 1, 10, 3, 1)
+
+    # Top-N de jugadores por PageRank a mostrar en el grafo
+    TOP_N = 10  # cámbialo si quieres otro límite
+
+    nodes_df, edges_df, pr_map, pr_top = build_pass_network(
+        df_team,
+        team_name=team_name,
+        min_passes=min_passes,
+        top_n=TOP_N,  # <<--- nuevo
+    )
+
+    if nodes_df.empty or edges_df.empty:
+        st.info("No hay suficientes pases para construir la red en esta selección.")
+    else:
+        st.markdown(
+            f"""
+            <div style="
+                font-size: 1.1rem;           /* 👈 ligeramente más grande que caption */
+                color: #CCCCCC;              /* texto gris suave */
+                margin-bottom: 10px;
+            ">
+                Jugador más influyente por PageRank: 
+                <b style="color:#4CAF50;">{pr_top}</b>  <!-- 👈 nombre en verde -->
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        fig_net = plot_pass_network(
+            nodes_df,
+            edges_df,
+            highlight=pr_top,
+            #title=f"Red de pases (Top-{TOP_N} por PageRank, conexiones ≥ umbral)"
+        )
+        st.plotly_chart(fig_net, use_container_width=True)
+
+        # (opcional) tabla top-10 por PageRank
+        #st.markdown("#### Top-10 por centralidad (PageRank)")
+        #st.dataframe(nodes_df[["player","pr","indeg","outdeg","total"]].head(5), use_container_width=True)
+
+    st.markdown("### Estilo de juego (v0 real)")
+    #st.info(infer_style_summary(df_team, team_name=team_name))
+    # df_team = df[df["team"] == team_name]  # ya lo tienes en tu app
+    display_play_style_section(df_team, team_name)
+
+    st.markdown("### Zonas donde se anotan más goles")
+
+    # df_team ya está filtrado por el equipo
+    display_goal_zones_section(df_team, team_name)
+    
+    # xy = goals_xy_for_heatmap(df_team, team_name=team_name)
+    # if xy.empty:
+    #     st.info("No hay goles registrados para el heatmap en la selección actual.")
+    # else:
+    #     if _HAS_MPLSOCCER:
+    #         import matplotlib.pyplot as plt
+    #         pitch = Pitch(pitch_type='statsbomb', line_zorder=2)
+    #         fig, ax = pitch.draw(figsize=(10, 6))
+    #         hb = ax.hexbin(xy["x"], xy["y"], gridsize=20, extent=(0, 120, 0, 80), mincnt=1)
+    #         cbar = fig.colorbar(hb, ax=ax)
+    #         cbar.set_label('Frecuencia de goles')
+    #         ax.set_title("Mapa de calor – Zonas de gol")
+    #         st.pyplot(fig, use_container_width=True)
+    #     else:
+    #         fig = px.density_heatmap(xy, x="x", y="y", nbinsx=24, nbinsy=16, title="Mapa de calor – Zonas de gol")
+    #         fig.update_yaxes(autorange="reversed", range=[0,80])
+    #         fig.update_xaxes(range=[0,120])
     #         st.plotly_chart(fig, use_container_width=True)
 
 
