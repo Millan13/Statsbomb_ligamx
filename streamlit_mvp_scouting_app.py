@@ -407,7 +407,7 @@ st.session_state["events_df_filtered_team"] = df_team.copy()
 # -------------------------------
 # Pestañas
 # -------------------------------
-TAB_INICIO, TAB_AMERICA, TAB_ROSTER = st.tabs(["🏁 Inicio", "🦅 Club América", "👥 Roster"])
+TAB_INICIO, TAB_AMERICA, TAB_ROSTER = st.tabs(["🏁 Inicio", "🦅 Club América", "👥 Roster:Scouting"])
 
 # -------------------------------
 # Tab: Inicio (explicación + selección)
@@ -997,7 +997,7 @@ with TAB_ROSTER:
             Roster de {py_html.escape(team_name)} — {py_html.escape(pos_label)} (ordenado por eficiencia)
         </div>
         <div id="roster" class="hsnap"></div>
-        <div id="selected_info" style="margin:6px 0 6px; font-size:14px;"></div>
+        <div id="selected_info" style="margin:6px 0 6px;color: #f1f1f1; font-size:14px;"></div>
 
         <div id="cands_section" style="display:none;">
             <div id="cands_title" class="section-title"></div>
