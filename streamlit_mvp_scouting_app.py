@@ -325,7 +325,7 @@ with st.sidebar:
         help="Prefijo donde está tu parquet único (termina en /).",
     )
     # Archivo ÚNICO optimizado para la app
-    clausura_parquet = "events_merged_LigaMX_2024_2025_clausura_streamlit_app.parquet"
+    clausura_parquet = "events_merged_LigaMX_2024_2025_clausura_streamlit_app2.parquet"
     path_clausura = join_gs(gcs_prefix, clausura_parquet)
 
     team_name = st.text_input("Equipo", value="América")
